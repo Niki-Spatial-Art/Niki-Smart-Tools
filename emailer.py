@@ -84,6 +84,45 @@ class EmailNotifier:
             logger.error(f"发送邮件失败: {str(e)}")
             return False
     
+    def send_html_alert(self, recipient_email: str, subject: str, html_content: str) -> bool:
+        """
+        发送 HTML 格式邮件（V2.0 新增）
+        
+        :param recipient_email: 收件人邮箱
+        :param subject: 邮件主题
+        :param html_content: HTML 邮件内容
+        :return: 是否发送成功
+        """
+        try:
+            # 创建邮件
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = self.sender_email
+            msg["To"] = recipient_email
+            
+            # 添加 HTML 版本
+            html_part = MIMEText(html_content, "html", "utf-8")
+            msg.attach(html_part)
+            
+            # 发送邮件
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()  # 启用TLS加密
+                server.login(self.sender_email, self.sender_password)
+                server.send_message(msg)
+            
+            logger.info(f"✅ HTML 邮件已成功发送到 {recipient_email}")
+            return True
+            
+        except smtplib.SMTPAuthenticationError:
+            logger.error("❌ 邮箱认证失败，请检查邮箱地址和授权码")
+            return False
+        except smtplib.SMTPException as e:
+            logger.error(f"❌ SMTP错误: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ 发送邮件失败: {str(e)}")
+            return False
+    
     def send_status_report(self, recipient_email: str, report_data: dict) -> bool:
         """
         发送定期状态报告
@@ -104,7 +143,7 @@ class EmailNotifier:
 {report_data.get('rate_diff', 0):.1f} 个基点
 
 【监控说明】
-- 监控周期: 每30分钟
+- 监控周期: 每8分钟
 - 触发条件: 利差 > 15个基点 且 支持实时到账
 - 当前状态: {'✓ 发现机会' if report_data.get('should_alert') else '✗ 暂无机会'}
 
