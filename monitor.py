@@ -73,6 +73,10 @@ def secid(code: str) -> str:
     return f"{market_prefix(code)}.{code}"
 
 
+def market_code(code: str) -> str:
+    return f"sh{code}" if market_prefix(code) == "1" else f"sz{code}"
+
+
 def safe_float(value, scale: float = 1.0) -> Optional[float]:
     try:
         if value in (None, "-", ""):
@@ -107,7 +111,7 @@ def eastmoney_get(url: str, params: Dict, timeout: int = 18) -> Dict:
     raise last_exc
 
 
-def fetch_quote(code: str) -> Quote:
+def fetch_quote_eastmoney(code: str) -> Quote:
     data = eastmoney_get(
         "https://push2.eastmoney.com/api/qt/stock/get",
         {
@@ -133,6 +137,97 @@ def fetch_quote(code: str) -> Quote:
         ma20=ma20,
         ma60=ma60,
     )
+
+
+def fetch_quote_tencent(code: str) -> Quote:
+    url = "https://qt.gtimg.cn/q=" + market_code(code)
+    response = requests.get(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 ETF Strategy Monitor"},
+        timeout=12,
+    )
+    response.raise_for_status()
+    response.encoding = "gbk"
+    text = response.text.strip()
+    if "~" not in text:
+        raise ValueError(f"Unexpected Tencent quote format for {code}")
+
+    payload = text.split('"', 1)[1].rsplit('"', 1)[0]
+    parts = payload.split("~")
+    name = parts[1] if len(parts) > 1 and parts[1] else code
+    price = safe_float(parts[3] if len(parts) > 3 else None)
+    pct_change = safe_float(parts[32] if len(parts) > 32 else None)
+    amount = safe_float(parts[37] if len(parts) > 37 else None, 0.0001)
+    ma20, ma60 = fetch_moving_averages(code)
+
+    return Quote(
+        code=code,
+        name=name,
+        price=price,
+        pct_change=pct_change,
+        amount=amount,
+        ma20=ma20,
+        ma60=ma60,
+    )
+
+
+def fetch_quote_sina(code: str) -> Quote:
+    url = "https://hq.sinajs.cn/list=" + market_code(code)
+    response = requests.get(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 ETF Strategy Monitor",
+            "Referer": "https://finance.sina.com.cn/",
+        },
+        timeout=12,
+    )
+    response.raise_for_status()
+    response.encoding = "gbk"
+    text = response.text.strip()
+    if "," not in text:
+        raise ValueError(f"Unexpected Sina quote format for {code}")
+
+    payload = text.split('"', 1)[1].rsplit('"', 1)[0]
+    parts = payload.split(",")
+    name = parts[0] if parts and parts[0] else code
+    open_price = safe_float(parts[1] if len(parts) > 1 else None)
+    prev_close = safe_float(parts[2] if len(parts) > 2 else None)
+    price = safe_float(parts[3] if len(parts) > 3 else None)
+    amount = safe_float(parts[9] if len(parts) > 9 else None)
+    pct_change = ((price - prev_close) / prev_close * 100) if price and prev_close else None
+    if price is None and open_price is not None:
+        price = open_price
+    ma20, ma60 = fetch_moving_averages(code)
+
+    return Quote(
+        code=code,
+        name=name,
+        price=price,
+        pct_change=pct_change,
+        amount=amount,
+        ma20=ma20,
+        ma60=ma60,
+    )
+
+
+def fetch_quote(code: str) -> Quote:
+    sources = [
+        ("eastmoney", fetch_quote_eastmoney),
+        ("tencent", fetch_quote_tencent),
+        ("sina", fetch_quote_sina),
+    ]
+    errors = []
+    for source_name, fetcher in sources:
+        try:
+            quote = fetcher(code)
+            if quote.price is None:
+                raise ValueError("missing price")
+            logger.info("%s quote source: %s", code, source_name)
+            return quote
+        except Exception as exc:
+            logger.warning("%s quote source %s failed: %s", code, source_name, exc)
+            errors.append(f"{source_name}: {exc}")
+    raise RuntimeError("; ".join(errors))
 
 
 def fetch_moving_averages(code: str) -> tuple:
