@@ -1,4 +1,5 @@
-name: Bank Rate Monitor
+name: ETF Strategy Monitor
+
 
 on:
   workflow_dispatch:
