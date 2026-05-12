@@ -97,6 +97,7 @@ def generate_ai_summary(report: Dict) -> str:
                 "level": item["level"],
                 "action": item["action"],
                 "reasons": item["reasons"][:3],
+                "strategy": item.get("strategy", {}),
             }
         )
 
@@ -107,7 +108,8 @@ def generate_ai_summary(report: Dict) -> str:
 1. 不要承诺收益，不要说一定会涨。
 2. 强调纪律：绿色可小仓研究，黄色观察，红色禁止追买。
 3. 特别提醒高溢价/停牌风险样本不要追。
-4. 输出控制在 6 条以内，每条短句。
+4. 如果 strategy 里出现 BUY / SELL / BLOCK，请优先说明执行动作和金额。
+5. 输出控制在 6 条以内，每条短句。
 
 数据：
 {json.dumps(compact, ensure_ascii=False, indent=2)}

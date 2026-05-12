@@ -1,0 +1,63 @@
+{
+  "total_capital": 480000,
+  "cash": 80000,
+  "max_single_weight": 0.25,
+  "default_buy_amount": 10000,
+  "positions": [
+    {
+      "code": "512100",
+      "name": "中证1000ETF",
+      "cost": 3.55,
+      "shares": 10000,
+      "target_weight": 0.15,
+      "buy_below": 3.50,
+      "sell_above": 3.80,
+      "stop_loss": 3.25,
+      "grid_step": 0.03
+    },
+    {
+      "code": "159696",
+      "name": "纳指100ETF",
+      "cost": 1.88,
+      "shares": 2600,
+      "target_weight": 0.20,
+      "buy_below": 1.86,
+      "sell_above": 2.08,
+      "stop_loss": 1.70,
+      "grid_step": 0.04
+    },
+    {
+      "code": "513180",
+      "name": "恒生科技ETF",
+      "cost": 0.64,
+      "shares": 0,
+      "target_weight": 0.08,
+      "buy_below": 0.62,
+      "sell_above": 0.70,
+      "stop_loss": 0.57,
+      "grid_step": 0.04
+    },
+    {
+      "code": "518880",
+      "name": "黄金ETF",
+      "cost": 9.60,
+      "shares": 0,
+      "target_weight": 0.10,
+      "buy_below": 9.50,
+      "sell_above": 10.30,
+      "stop_loss": 9.10,
+      "grid_step": 0.03
+    },
+    {
+      "code": "513310",
+      "name": "中韩半导体ETF",
+      "cost": 0,
+      "shares": 0,
+      "target_weight": 0.00,
+      "buy_below": null,
+      "sell_above": null,
+      "stop_loss": null,
+      "note": "高溢价/停牌风险样本，只观察不追买"
+    }
+  ]
+}

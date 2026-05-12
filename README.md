@@ -48,6 +48,53 @@ ETF_HIGH_RISK_CODES=513310
 ETF_QDII_CODES=513310,159696,513180
 ```
 
+## Portfolio Rules
+
+`portfolio.json` turns the radar into an execution checklist.
+
+It can define:
+
+- total capital and cash
+- current ETF shares and cost
+- target weight
+- buy-below line
+- sell-above line
+- stop-loss line
+- default buy amount
+
+Example:
+
+```json
+{
+  "total_capital": 480000,
+  "cash": 80000,
+  "max_single_weight": 0.25,
+  "default_buy_amount": 10000,
+  "positions": [
+    {
+      "code": "512100",
+      "name": "中证1000ETF",
+      "cost": 3.55,
+      "shares": 10000,
+      "target_weight": 0.15,
+      "buy_below": 3.50,
+      "sell_above": 3.80,
+      "stop_loss": 3.25
+    }
+  ]
+}
+```
+
+The email report will show:
+
+```text
+买 / 卖 / 等
+建议金额
+当前仓位
+目标金额
+触发原因
+```
+
 ## AI Provider
 
 推荐先用阿里百炼千问：

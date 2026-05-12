@@ -9,6 +9,7 @@ import html
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from statistics import mean
@@ -42,6 +43,7 @@ DEFAULT_WATCHLIST = [
 
 DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180"}
+PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
 
 
 @dataclass
@@ -80,14 +82,29 @@ def safe_float(value, scale: float = 1.0) -> Optional[float]:
         return None
 
 
-def eastmoney_get(url: str, params: Dict, timeout: int = 12) -> Dict:
+def eastmoney_get(url: str, params: Dict, timeout: int = 18) -> Dict:
     headers = {
         "User-Agent": "Mozilla/5.0 ETF Strategy Monitor",
         "Referer": "https://quote.eastmoney.com/",
     }
-    response = requests.get(url, params=params, headers=headers, timeout=timeout)
-    response.raise_for_status()
-    return response.json()
+    last_exc = None
+    urls = [url]
+    if "push2.eastmoney.com" in url:
+        urls.append(url.replace("push2.eastmoney.com", "push2delay.eastmoney.com"))
+    elif "push2delay.eastmoney.com" in url:
+        urls.append(url.replace("push2delay.eastmoney.com", "push2.eastmoney.com"))
+
+    for attempt in range(3):
+        for candidate in urls:
+            try:
+                response = requests.get(candidate, params=params, headers=headers, timeout=timeout)
+                response.raise_for_status()
+                return response.json()
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning("Eastmoney request failed (%s/%s): %s", attempt + 1, candidate, exc)
+        time.sleep(1 + attempt)
+    raise last_exc
 
 
 def fetch_quote(code: str) -> Quote:
@@ -220,16 +237,158 @@ def load_watchlist() -> List[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def load_portfolio() -> Dict:
+    try:
+        with open(PORTFOLIO_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except FileNotFoundError:
+        logger.info("No portfolio config found, strategy actions will be skipped")
+        return {}
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid portfolio config, strategy actions will be skipped: %s", exc)
+        return {}
+
+    data.setdefault("positions", [])
+    data.setdefault("total_capital", 0)
+    data.setdefault("cash", 0)
+    data.setdefault("max_single_weight", 0.25)
+    data.setdefault("default_buy_amount", 10000)
+    return data
+
+
+def watched_codes_from_portfolio(portfolio: Dict) -> List[str]:
+    return [
+        str(item.get("code", "")).strip()
+        for item in portfolio.get("positions", [])
+        if str(item.get("code", "")).strip()
+    ]
+
+
+def combined_watchlist() -> List[str]:
+    codes = []
+    for code in load_watchlist() + watched_codes_from_portfolio(load_portfolio()):
+        if code not in codes:
+            codes.append(code)
+    return codes
+
+
+def position_map(portfolio: Dict) -> Dict[str, Dict]:
+    return {str(item.get("code")): item for item in portfolio.get("positions", [])}
+
+
+def yuan(value: Optional[float]) -> str:
+    if value is None:
+        return "--"
+    return f"{value:,.0f}元"
+
+
+def evaluate_strategy(item: Dict, portfolio: Dict) -> Dict:
+    pos = position_map(portfolio).get(item["code"])
+    if not pos or item.get("price") is None:
+        return {
+            "decision": "观察",
+            "decision_level": "HOLD",
+            "trade_amount": None,
+            "position_value": None,
+            "position_weight": None,
+            "target_value": None,
+            "gap_to_buy": None,
+            "gap_to_sell": None,
+            "reasons": ["未配置持仓/目标价，仅保留雷达观察"],
+        }
+
+    price = float(item["price"])
+    shares = float(pos.get("shares") or 0)
+    total_capital = float(portfolio.get("total_capital") or 0)
+    cash = float(portfolio.get("cash") or 0)
+    target_weight = float(pos.get("target_weight") or 0)
+    max_single_weight = float(portfolio.get("max_single_weight") or 0.25)
+    default_buy_amount = float(portfolio.get("default_buy_amount") or 10000)
+
+    position_value = price * shares
+    position_weight = position_value / total_capital if total_capital else 0
+    target_value = total_capital * target_weight
+    max_value = total_capital * max_single_weight
+    buy_below = pos.get("buy_below")
+    sell_above = pos.get("sell_above")
+    stop_loss = pos.get("stop_loss")
+
+    reasons = []
+    decision = "等待"
+    decision_level = "HOLD"
+    trade_amount = None
+
+    if item["level"] == "RED":
+        decision = "禁止买入"
+        decision_level = "BLOCK"
+        reasons.append("雷达红色，优先风控")
+    elif stop_loss is not None and price <= float(stop_loss) and shares > 0:
+        decision = "触发止损检查"
+        decision_level = "SELL"
+        trade_amount = position_value * 0.5
+        reasons.append(f"价格 {price:.3f} <= 止损线 {float(stop_loss):.3f}")
+    elif sell_above is not None and price >= float(sell_above) and shares > 0:
+        decision = "分批止盈"
+        decision_level = "SELL"
+        trade_amount = position_value * 0.25
+        reasons.append(f"价格 {price:.3f} >= 止盈线 {float(sell_above):.3f}")
+    elif buy_below is not None and price <= float(buy_below):
+        if position_value >= target_value:
+            decision = "不加仓"
+            reasons.append("已达到或超过目标仓位")
+        elif position_value >= max_value:
+            decision = "不加仓"
+            reasons.append("已接近单只ETF仓位上限")
+        elif cash <= 0:
+            decision = "等待现金"
+            reasons.append("现金配置不足")
+        else:
+            decision = "触发买入"
+            decision_level = "BUY"
+            trade_amount = min(default_buy_amount, target_value - position_value, max_value - position_value, cash)
+            reasons.append(f"价格 {price:.3f} <= 买入线 {float(buy_below):.3f}")
+    else:
+        if buy_below is not None:
+            gap = (price / float(buy_below) - 1) * 100
+            reasons.append(f"距离买入线约 {gap:.2f}%")
+        if sell_above is not None and shares > 0:
+            gap = (float(sell_above) / price - 1) * 100
+            reasons.append(f"距离止盈线约 {gap:.2f}%")
+
+    if item["level"] == "YELLOW" and decision_level == "BUY":
+        decision = "小仓买入/谨慎"
+        reasons.append("雷达黄色，只允许小仓执行")
+
+    if item["level"] == "RED" and pos.get("note"):
+        reasons.append(str(pos["note"]))
+
+    return {
+        "decision": decision,
+        "decision_level": decision_level,
+        "trade_amount": trade_amount,
+        "position_value": position_value,
+        "position_weight": position_weight,
+        "target_value": target_value,
+        "gap_to_buy": ((price / float(buy_below) - 1) * 100) if buy_below else None,
+        "gap_to_sell": ((float(sell_above) / price - 1) * 100) if sell_above and price else None,
+        "reasons": reasons or ["未触发买卖条件，继续等待"],
+    }
+
+
 def run_radar() -> Dict:
     high_risk_codes = split_env_set("ETF_HIGH_RISK_CODES", DEFAULT_HIGH_RISK_CODES)
     qdii_codes = split_env_set("ETF_QDII_CODES", DEFAULT_QDII_CODES)
+    portfolio = load_portfolio()
 
     results = []
     failures = []
-    for code in load_watchlist():
+    watchlist = combined_watchlist()
+    for code in watchlist:
         try:
             quote = fetch_quote(code)
-            results.append(classify_quote(quote, high_risk_codes, qdii_codes))
+            item = classify_quote(quote, high_risk_codes, qdii_codes)
+            item["strategy"] = evaluate_strategy(item, portfolio)
+            results.append(item)
             logger.info("%s %s checked", code, quote.name)
         except Exception as exc:
             logger.warning("ETF %s skipped: %s", code, exc)
@@ -237,7 +396,8 @@ def run_radar() -> Dict:
 
     return {
         "generated_at": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-        "watch_count": len(load_watchlist()),
+        "watch_count": len(watchlist),
+        "portfolio": portfolio,
         "results": results,
         "failures": failures,
     }
@@ -263,7 +423,18 @@ def generate_html_email(report: Dict) -> str:
     rows = []
     for item in report["results"]:
         reasons = "<br>".join(html.escape(reason) for reason in item["reasons"])
+        strategy = item.get("strategy", {})
+        strategy_reasons = "<br>".join(html.escape(reason) for reason in strategy.get("reasons", []))
         level_color = color_for(item["level"])
+        decision_level = strategy.get("decision_level", "HOLD")
+        decision_color = {
+            "BUY": "#1a7f37",
+            "SELL": "#d1242f",
+            "BLOCK": "#d1242f",
+            "HOLD": "#9a6700",
+        }.get(decision_level, "#57606a")
+        position_weight = strategy.get("position_weight")
+        target_value = strategy.get("target_value")
         rows.append(
             f"""
             <tr>
@@ -273,6 +444,13 @@ def generate_html_email(report: Dict) -> str:
                 <td>{fmt(item['ma20'])}</td>
                 <td>{fmt(item['ma60'])}</td>
                 <td><span style="color:{level_color}; font-weight:bold;">{label_for(item['level'])}</span><br>{html.escape(item['action'])}</td>
+                <td>
+                    <strong style="color:{decision_color};">{html.escape(strategy.get('decision', '观察'))}</strong><br>
+                    金额：{yuan(strategy.get('trade_amount'))}<br>
+                    当前仓位：{fmt(position_weight * 100 if position_weight is not None else None, '%')}<br>
+                    目标金额：{yuan(target_value)}<br>
+                    <span style="color:#57606a;">{strategy_reasons}</span>
+                </td>
                 <td>{reasons}</td>
             </tr>
             """
@@ -323,6 +501,12 @@ def generate_html_email(report: Dict) -> str:
         <div class="container">
             <h2>ETF Strategy Monitor</h2>
             <div class="sub">生成时间：{html.escape(report['generated_at'])} 北京时间。仅作交易纪律提醒，不构成投资建议。</div>
+            <div class="note" style="background:#f6f8fa; border-left-color:#57606a;">
+                <strong>账户配置</strong><br>
+                总资金：{yuan(report.get('portfolio', {}).get('total_capital'))}；
+                现金：{yuan(report.get('portfolio', {}).get('cash'))}；
+                单只ETF上限：{fmt((report.get('portfolio', {}).get('max_single_weight') or 0) * 100, '%')}。
+            </div>
             <table>
                 <tr>
                     <th>标的</th>
@@ -331,6 +515,7 @@ def generate_html_email(report: Dict) -> str:
                     <th>20日线</th>
                     <th>60日线</th>
                     <th>信号</th>
+                    <th>策略动作</th>
                     <th>原因</th>
                 </tr>
                 {''.join(rows)}
