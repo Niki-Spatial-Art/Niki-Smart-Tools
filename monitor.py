@@ -7,6 +7,7 @@ import pytz
 from datetime import datetime, time
 from scraper import RateMonitor
 from emailer import EmailNotifier
+from ai_client import generate_ai_summary_html
 import logging
 
 logging.basicConfig(
@@ -62,6 +63,8 @@ def generate_html_email(result):
             </p>
         </div>
         """
+
+    ai_summary = generate_ai_summary_html(result)
     
     html_content = f"""
     <!DOCTYPE html>
@@ -139,6 +142,7 @@ def generate_html_email(result):
             </table>
             
             {action_advice}
+            {ai_summary}
             
             <div class="footer">
                 <p>监控时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (北京时间)</p>
