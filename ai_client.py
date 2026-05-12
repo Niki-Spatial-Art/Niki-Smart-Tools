@@ -1,15 +1,14 @@
-"""Small OpenAI-compatible AI client for Qwen, Kimi, and custom providers."""
+"""Optional OpenAI-compatible AI summary client."""
 
-import html
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import requests
 
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 
 PROVIDERS = {
     "qwen": {
@@ -22,21 +21,24 @@ PROVIDERS = {
         "model": "kimi-k2.6",
         "key_env": "KIMI_API_KEY",
     },
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
 }
 
 
-def _env_enabled(name: str, default: str = "false") -> bool:
+def env_enabled(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _provider_config() -> Dict[str, str]:
+def provider_config() -> Dict[str, str]:
     provider = os.getenv("AI_PROVIDER", "qwen").strip().lower()
     config = dict(PROVIDERS.get(provider, PROVIDERS["qwen"]))
-
     config["provider"] = provider
     config["base_url"] = os.getenv("AI_BASE_URL", config["base_url"]).rstrip("/")
     config["model"] = os.getenv("AI_MODEL", config["model"])
-
     key_env = os.getenv("AI_KEY_ENV", config["key_env"])
     config["api_key"] = (
         os.getenv("AI_API_KEY")
@@ -47,28 +49,20 @@ def _provider_config() -> Dict[str, str]:
     return config
 
 
-def ai_is_configured() -> bool:
-    """Return True when AI summary generation should run."""
-    return _env_enabled("AI_ENABLED") and bool(_provider_config()["api_key"])
-
-
-def chat_completion(prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
-    """Call an OpenAI-compatible chat completion endpoint."""
-    config = _provider_config()
-    if not config["api_key"]:
-        logger.info("AI summary skipped: missing API key")
+def chat_completion(prompt: str, system_prompt: str) -> Optional[str]:
+    config = provider_config()
+    if not env_enabled("AI_ENABLED") or not config["api_key"]:
+        logger.info("AI summary skipped")
         return None
-
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
 
     payload = {
         "model": config["model"],
-        "messages": messages,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
         "temperature": float(os.getenv("AI_TEMPERATURE", "0.2")),
-        "max_tokens": int(os.getenv("AI_MAX_TOKENS", "500")),
+        "max_tokens": int(os.getenv("AI_MAX_TOKENS", "700")),
     }
 
     try:
@@ -84,45 +78,42 @@ def chat_completion(prompt: str, system_prompt: Optional[str] = None) -> Optiona
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()
-    except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError) as exc:
+    except Exception as exc:
         logger.warning("AI summary failed and will be skipped: %s", exc)
         return None
 
 
-def build_rate_prompt(result: Dict[str, Any]) -> str:
-    """Build a compact prompt from the monitor result."""
-    return f"""
-Please summarize this bank-rate monitor result in Chinese.
-Keep it short, practical, and conservative. Do not invent data.
+def generate_ai_summary(report: Dict) -> str:
+    compact = []
+    for item in report.get("results", []):
+        compact.append(
+            {
+                "code": item["code"],
+                "name": item["name"],
+                "price": item["price"],
+                "pct_change": item["pct_change"],
+                "ma20": item["ma20"],
+                "ma60": item["ma60"],
+                "level": item["level"],
+                "action": item["action"],
+                "reasons": item["reasons"][:3],
+            }
+        )
 
-Data:
-{json.dumps(result, ensure_ascii=False, indent=2, default=str)}
+    prompt = f"""
+请基于下面 ETF 雷达结果，给出中文策略简报。
 
-Required output:
-1. One-sentence status
-2. Whether action is worth considering
-3. Main risk or missing data
+要求：
+1. 不要承诺收益，不要说一定会涨。
+2. 强调纪律：绿色可小仓研究，黄色观察，红色禁止追买。
+3. 特别提醒高溢价/停牌风险样本不要追。
+4. 输出控制在 6 条以内，每条短句。
+
+数据：
+{json.dumps(compact, ensure_ascii=False, indent=2)}
 """.strip()
 
-
-def generate_ai_summary_html(result: Dict[str, Any]) -> str:
-    """Return an optional HTML block with AI advice."""
-    if not ai_is_configured():
-        return ""
-
-    summary = chat_completion(
-        build_rate_prompt(result),
-        system_prompt=(
-            "You are a cautious personal finance assistant. "
-            "You provide operational summaries, not investment guarantees."
-        ),
-    )
-    if not summary:
-        return ""
-
-    return f"""
-    <div style="margin-top: 20px; padding: 15px; background-color: #f6f8fa; border-left: 4px solid #6f42c1; border-radius: 4px;">
-        <p style="margin: 0 0 8px 0; font-size: 16px; font-weight: bold; color: #24292f;">AI 简报</p>
-        <div style="white-space: pre-wrap; font-size: 14px; color: #24292f;">{html.escape(summary)}</div>
-    </div>
-    """
+    return chat_completion(
+        prompt,
+        "你是一个谨慎的 ETF 交易纪律助手，只做风险提示和执行纪律总结。",
+    ) or ""
