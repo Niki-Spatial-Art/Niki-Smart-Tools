@@ -1,8 +1,6 @@
 name: Bank Rate Monitor
 
 on:
-  schedule:
-    - cron: '*/8 * * * *'  # 每8分钟运行一次
   workflow_dispatch:
 
 jobs:
@@ -21,3 +19,7 @@ jobs:
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           RATE_DIFF_THRESHOLD: 0.15
+          AI_ENABLED: ${{ secrets.AI_ENABLED }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
