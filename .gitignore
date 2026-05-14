@@ -10,3 +10,5 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+video_frames/
+video_frames_ffmpeg/

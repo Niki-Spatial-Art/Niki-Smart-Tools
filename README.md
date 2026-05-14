@@ -7,29 +7,23 @@
 ## What It Does
 
 - 自动监控 ETF 主线池
-- 用东方财富公开行情接口读取价格和日 K
-- 计算 20 日线、60 日线和日内涨跌幅
+- 用东方财富、腾讯、新浪等公开行情源读取价格
+- 计算日内涨跌幅、风险标签和组合执行动作
 - 输出绿色 / 黄色 / 红色交易纪律信号
 - 默认把 `513310` 作为高溢价风险样本，提示只看不追
 - 支持千问、Kimi、DeepSeek 等 OpenAI-compatible API 生成 AI 简报
 - 通过 GitHub Actions 免费运行
 - 通过 GitHub Secrets 保存邮箱和模型 API Key
 
-## v2 Planning Doc
-
-完整的 v2 需求说明、交易纪律规则和 AI 提示词见：
-
-[ETF_Strategy_Monitor_v2_REQUIREMENTS.md](ETF_Strategy_Monitor_v2_REQUIREMENTS.md)
-
 ## Signal Rules
 
 | Signal | Meaning | Discipline |
 | --- | --- | --- |
 | Green | 趋势偏强且没有明显过热 | 可研究小仓或按网格执行 |
-| Yellow | 有主线热度但位置或趋势不够舒服 | 观察，不追 |
+| Yellow | 有主线热度，但位置或趋势不够舒服 | 观察，不追 |
 | Red | 高溢价、风险公告、单日过热或情绪拥挤 | 禁止追买 |
 
-这套系统的核心不是预测涨跌，而是减少冲动交易：不追高溢价 ETF，不把情绪样本当买入信号，不在数据源失败时制造无意义告警。
+系统核心不是预测涨跌，而是减少冲动交易：不追高溢价 ETF，不把情绪样本当买入信号，不在数据源失败时制造无意义告警。
 
 ## Default Watchlist
 
@@ -46,7 +40,7 @@
 518880 黄金ETF
 ```
 
-你可以通过 GitHub Secrets 或 workflow 环境变量覆盖：
+可以通过 GitHub Secrets 或 workflow 环境变量覆盖：
 
 ```text
 ETF_WATCHLIST=513310,159696,510300,512100,512880
@@ -56,50 +50,50 @@ ETF_QDII_CODES=513310,159696,513180
 
 ## Portfolio Rules
 
-`portfolio.json` turns the radar into an execution checklist.
+`portfolio.json` 把雷达变成执行清单。
 
-It can define:
+它可以定义：
 
-- total capital and cash
-- current ETF shares and cost
-- target weight
-- buy-below line
-- sell-above line
-- stop-loss line
-- default buy amount
+- 总资金和现金
+- 当前 ETF 份额和成本
+- 目标仓位
+- 买入线
+- 止盈线
+- 止损线
+- 默认买入金额
 
-Example:
-
-```json
-{
-  "total_capital": 480000,
-  "cash": 80000,
-  "max_single_weight": 0.25,
-  "default_buy_amount": 10000,
-  "positions": [
-    {
-      "code": "512100",
-      "name": "中证1000ETF",
-      "cost": 3.55,
-      "shares": 10000,
-      "target_weight": 0.15,
-      "buy_below": 3.50,
-      "sell_above": 3.80,
-      "stop_loss": 3.25
-    }
-  ]
-}
-```
-
-The email report will show:
+邮件会展示：
 
 ```text
-买 / 卖 / 等
+买 / 卖 / 等 / 禁止买入
 建议金额
 当前仓位
 目标金额
 触发原因
 ```
+
+## AI Digital Infrastructure
+
+桌面四个录屏里的核心判断已经整理成“AI 数字基础建设”产业链雷达：
+
+- AI 普及以后，瓶颈不会只在 GPU
+- 算力负载提高后，压力会扩散到服务器、网络、存储、散热、电力和数据中心
+- `513310` 的爆发说明市场会给“稀缺主线 + 跨境稀缺资产 + 情绪拥挤”极高定价
+- 但追高溢价 ETF 风险大，下一步更适合做“ETF 核心仓 + 个股卫星仓”
+
+详细分层见：
+
+[AI_DIGITAL_INFRASTRUCTURE_MAP.md](AI_DIGITAL_INFRASTRUCTURE_MAP.md)
+
+机器可读监控池见：
+
+[digital_infra_watchlist.json](digital_infra_watchlist.json)
+
+## v2 Planning Doc
+
+完整的 v2 需求说明、交易纪律规则和 AI 提示词见：
+
+[ETF_Strategy_Monitor_v2_REQUIREMENTS.md](ETF_Strategy_Monitor_v2_REQUIREMENTS.md)
 
 ## AI Provider
 
@@ -155,7 +149,7 @@ Actions -> ETF Strategy Monitor -> Run workflow
 
 本地测试：
 
-```bash
+```text
 pip install -r requirements.txt
 python monitor.py
 ```
