@@ -15,6 +15,12 @@
 - 通过 GitHub Actions 免费运行
 - 通过 GitHub Secrets 保存邮箱和模型 API Key
 
+## v2 Planning Doc
+
+完整的 v2 需求说明、交易纪律规则和 AI 提示词见：
+
+[ETF_Strategy_Monitor_v2_REQUIREMENTS.md](ETF_Strategy_Monitor_v2_REQUIREMENTS.md)
+
 ## Signal Rules
 
 | Signal | Meaning | Discipline |
