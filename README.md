@@ -173,6 +173,21 @@ python monitor.py
 
 GitHub Actions 的 schedule 可能延迟或漏跑；本地 Windows 定时更适合准点提醒。
 
+## Local Report Archive
+
+每次运行都会在本地自动留档一份报告，方便以后复盘趋势、做月度统计，或者按家人的风险承受能力筛选更适合的产品。
+
+默认保存位置：
+
+```text
+reports/YYYY-MM/YYYY-MM-DD_HHMMSS_etf_radar.md
+reports/YYYY-MM/YYYY-MM-DD_HHMMSS_etf_radar.json
+reports/latest.md
+reports/latest.json
+```
+
+`.md` 适合直接阅读和分享；`.json` 适合后续做趋势分析、胜率统计、信号回测和家庭账户分层。归档里只保存行情、信号、组合规则和 AI 简报，不保存邮箱密码和 API Key。
+
 ## Disclaimer
 
 本项目只做数据整理、风险提示和交易纪律提醒，不构成投资建议。ETF 有波动风险，QDII ETF 还可能存在溢价、汇率、时差和停牌风险。任何买卖决策都需要使用者自行判断和承担结果。

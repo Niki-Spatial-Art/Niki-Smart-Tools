@@ -12,6 +12,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from statistics import mean
 from typing import Dict, List, Optional
 
@@ -63,6 +64,7 @@ DEFAULT_WATCHLIST = [
 DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180"}
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
+REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
 
 
 @dataclass
@@ -531,8 +533,135 @@ def fmt(value, suffix: str = "", decimals: int = 2) -> str:
     return f"{value:.{decimals}f}{suffix}"
 
 
+def report_counts(report: Dict) -> Dict[str, int]:
+    results = report.get("results", [])
+    return {
+        "green": sum(1 for item in results if item.get("level") == "GREEN"),
+        "yellow": sum(1 for item in results if item.get("level") == "YELLOW"),
+        "red": sum(1 for item in results if item.get("level") == "RED"),
+        "failures": len(report.get("failures", [])),
+    }
+
+
+def markdown_escape(value) -> str:
+    text = "" if value is None else str(value)
+    return text.replace("|", "\\|").replace("\r", " ").replace("\n", "<br>")
+
+
+def build_report_metadata(report: Dict, subject: str) -> Dict:
+    counts = report_counts(report)
+    return {
+        "subject": subject,
+        "generated_at": report.get("generated_at"),
+        "saved_at": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        "timezone": "Asia/Shanghai",
+        "watch_count": report.get("watch_count", 0),
+        "green_count": counts["green"],
+        "yellow_count": counts["yellow"],
+        "red_count": counts["red"],
+        "failure_count": counts["failures"],
+        "source": "ETF Strategy Monitor",
+        "disclaimer": "仅作交易纪律提醒，不构成投资建议。",
+    }
+
+
+def generate_markdown_report(report: Dict, subject: str) -> str:
+    metadata = build_report_metadata(report, subject)
+    portfolio = report.get("portfolio", {})
+    lines = [
+        f"# {subject}",
+        "",
+        "## 元数据",
+        "",
+        f"- 生成时间：{metadata['generated_at']} 北京时间",
+        f"- 保存时间：{metadata['saved_at']} 北京时间",
+        f"- 监控数量：{metadata['watch_count']}",
+        f"- 绿色/黄色/红色：{metadata['green_count']} / {metadata['yellow_count']} / {metadata['red_count']}",
+        f"- 数据缺口：{metadata['failure_count']}",
+        "- 说明：仅作交易纪律提醒，不构成投资建议。",
+        "",
+        "## 账户配置",
+        "",
+        f"- 总资金：{yuan(portfolio.get('total_capital'))}",
+        f"- 现金：{yuan(portfolio.get('cash'))}",
+        f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
+        "",
+        "## 雷达结果",
+        "",
+        "| 代码 | 名称 | 最新价 | 涨跌幅 | 20日线 | 60日线 | 信号 | 动作 | 策略动作 | 金额 | 当前仓位 | 目标金额 | 原因 |",
+        "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | --- |",
+    ]
+
+    for item in report.get("results", []):
+        strategy = item.get("strategy", {})
+        position_weight = strategy.get("position_weight")
+        reasons = "；".join(item.get("reasons", []))
+        strategy_reasons = "；".join(strategy.get("reasons", []))
+        lines.append(
+            "| {code} | {name} | {price} | {pct} | {ma20} | {ma60} | {level} | {action} | {decision}<br>{strategy_reasons} | {amount} | {weight} | {target} | {reasons} |".format(
+                code=markdown_escape(item.get("code")),
+                name=markdown_escape(item.get("name")),
+                price=fmt(item.get("price")),
+                pct=fmt(item.get("pct_change"), "%"),
+                ma20=fmt(item.get("ma20")),
+                ma60=fmt(item.get("ma60")),
+                level=label_for(item.get("level", "")),
+                action=markdown_escape(item.get("action")),
+                decision=markdown_escape(strategy.get("decision", "观察")),
+                strategy_reasons=markdown_escape(strategy_reasons),
+                amount=yuan(strategy.get("trade_amount")),
+                weight=fmt(position_weight * 100 if position_weight is not None else None, "%"),
+                target=yuan(strategy.get("target_value")),
+                reasons=markdown_escape(reasons),
+            )
+        )
+
+    ai_summary = report.get("ai_summary")
+    if ai_summary:
+        lines.extend(["", "## AI 策略简报", "", str(ai_summary).strip()])
+
+    if report.get("failures"):
+        lines.extend(["", "## 数据缺口", ""])
+        for item in report["failures"]:
+            lines.append(f"- {item.get('code')}: {item.get('error')}")
+
+    lines.extend(["", "## 原始 JSON", "", "同目录 `.json` 文件保存了机器可读数据，适合后续做趋势分析。", ""])
+    return "\n".join(lines)
+
+
+def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
+    report_root = Path(REPORTS_DIR)
+    month_dir = report_root / datetime.now(BEIJING_TZ).strftime("%Y-%m")
+    month_dir.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d_%H%M%S")
+    base_name = f"{stamp}_etf_radar"
+    md_path = month_dir / f"{base_name}.md"
+    json_path = month_dir / f"{base_name}.json"
+
+    payload = {
+        "metadata": build_report_metadata(report, subject),
+        "portfolio": report.get("portfolio", {}),
+        "results": report.get("results", []),
+        "failures": report.get("failures", []),
+        "ai_summary": report.get("ai_summary", ""),
+    }
+
+    markdown = generate_markdown_report(report, subject)
+    md_path.write_text(markdown, encoding="utf-8")
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (report_root / "latest.md").write_text(markdown, encoding="utf-8")
+    (report_root / "latest.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    logger.info("Report archive saved: %s and %s", md_path, json_path)
+    return {"markdown": str(md_path), "json": str(json_path)}
+
+
 def generate_html_email(report: Dict) -> str:
-    ai_summary = generate_ai_summary(report)
+    ai_summary = report.get("ai_summary", "")
 
     rows = []
     for item in report["results"]:
@@ -656,9 +785,11 @@ def main() -> bool:
 
     logger.info("=== ETF Strategy Monitor started ===")
     report = run_radar()
+    report["ai_summary"] = generate_ai_summary(report)
 
     if not report["results"]:
         logger.warning("No ETF data available. Skipping email but returning success.")
+        save_report_archive(report, f"ETF雷达：无可用数据 - {report['generated_at']}")
         return True
 
     notifier = EmailNotifier(
@@ -668,10 +799,10 @@ def main() -> bool:
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
     )
 
-    red_count = sum(1 for item in report["results"] if item["level"] == "RED")
-    green_count = sum(1 for item in report["results"] if item["level"] == "GREEN")
-    subject = f"ETF雷达：绿色{green_count}个 / 红色{red_count}个 - {report['generated_at']}"
+    counts = report_counts(report)
+    subject = f"ETF雷达：绿色{counts['green']}个 / 红色{counts['red']}个 - {report['generated_at']}"
     html_content = generate_html_email(report)
+    save_report_archive(report, subject)
 
     if notifier.send_html_alert(recipient_email, subject, html_content):
         logger.info("ETF strategy email sent")
