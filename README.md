@@ -154,6 +154,25 @@ pip install -r requirements.txt
 python monitor.py
 ```
 
+本地 Windows 定时兜底：
+
+```text
+1. 复制 .env.example 为 .env
+2. 在 .env 里填邮箱授权码和 AI Key
+3. 用 Windows 任务计划程序定时运行 run_monitor_local.ps1
+```
+
+推荐本地定时时间：
+
+```text
+09:45
+11:35
+14:50
+21:30
+```
+
+GitHub Actions 的 schedule 可能延迟或漏跑；本地 Windows 定时更适合准点提醒。
+
 ## Disclaimer
 
 本项目只做数据整理、风险提示和交易纪律提醒，不构成投资建议。ETF 有波动风险，QDII ETF 还可能存在溢价、汇率、时差和停牌风险。任何买卖决策都需要使用者自行判断和承担结果。
