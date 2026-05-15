@@ -1,63 +1,107 @@
 {
-  "total_capital": 480000,
-  "cash": 80000,
+  "snapshot_time": "2026-05-15 16:58:16",
+  "total_capital": 306791.04,
+  "cash": 146748.54,
+  "securities_market_value": 160042.5,
+  "reference_profit": 4047.38,
+  "daily_profit": -2655.4,
   "max_single_weight": 0.25,
   "default_buy_amount": 10000,
   "positions": [
     {
       "code": "512100",
-      "name": "中证1000ETF",
-      "cost": 3.55,
-      "shares": 10000,
-      "target_weight": 0.15,
-      "buy_below": 3.50,
-      "sell_above": 3.80,
+      "name": "中证1000ETF南方",
+      "cost": 3.288,
+      "shares": 22600,
+      "target_weight": 0.2,
+      "buy_below": null,
+      "sell_above": 3.55,
       "stop_loss": 3.25,
-      "grid_step": 0.03
+      "grid_step": 0.03,
+      "note": "当前约25%仓位，接近单只ETF上限；优先减仓或等待，不再追买。"
     },
     {
-      "code": "159696",
-      "name": "纳指100ETF",
-      "cost": 1.88,
-      "shares": 2600,
-      "target_weight": 0.20,
-      "buy_below": 1.86,
-      "sell_above": 2.08,
-      "stop_loss": 1.70,
-      "grid_step": 0.04
-    },
-    {
-      "code": "513180",
-      "name": "恒生科技ETF",
-      "cost": 0.64,
-      "shares": 0,
+      "code": "513130",
+      "name": "恒生科技ETF华泰柏瑞",
+      "cost": 0.73,
+      "shares": 76000,
       "target_weight": 0.08,
-      "buy_below": 0.62,
-      "sell_above": 0.70,
+      "buy_below": null,
+      "sell_above": 0.66,
       "stop_loss": 0.57,
-      "grid_step": 0.04
+      "grid_step": 0.04,
+      "note": "反弹退出仓。截图已有0.660和0.700两档卖出条件单，当前不加仓。"
+    },
+    {
+      "code": "159870",
+      "name": "化工ETF鹏华",
+      "cost": 0.937,
+      "shares": 18000,
+      "target_weight": 0.05,
+      "buy_below": null,
+      "sell_above": 0.95,
+      "stop_loss": 0.82,
+      "grid_step": 0.04,
+      "note": "反弹退出仓。截图已有0.950和0.968两档卖出条件单，当前不加仓。"
+    },
+    {
+      "code": "512000",
+      "name": "券商ETF华宝",
+      "cost": 0.516,
+      "shares": 19000,
+      "target_weight": 0.04,
+      "buy_below": 0.49,
+      "sell_above": 0.55,
+      "stop_loss": 0.47,
+      "grid_step": 0.04,
+      "note": "小仓观察，适合作为高波动网格仓，不扩大为主仓。"
+    },
+    {
+      "code": "588000",
+      "name": "科创50ETF华夏",
+      "cost": 1.787,
+      "shares": 3700,
+      "target_weight": 0.03,
+      "buy_below": null,
+      "sell_above": 1.8,
+      "stop_loss": 1.62,
+      "grid_step": 0.04,
+      "note": "今天已多笔卖出，剩余小仓观察；券商显示负成本时不用于真实成本判断。"
     },
     {
       "code": "518880",
-      "name": "黄金ETF",
-      "cost": 9.60,
+      "name": "黄金ETF华安",
+      "cost": 8.788,
+      "shares": 200,
+      "target_weight": 0.05,
+      "buy_below": 9.3,
+      "sell_above": 10.3,
+      "stop_loss": 8.7,
+      "grid_step": 0.03,
+      "note": "防守仓，目前仓位很小，主要用于组合对冲观察。"
+    },
+    {
+      "code": "159696",
+      "name": "纳指ETF易方达",
+      "cost": 0,
       "shares": 0,
-      "target_weight": 0.10,
-      "buy_below": 9.50,
-      "sell_above": 10.30,
-      "stop_loss": 9.10,
-      "grid_step": 0.03
+      "target_weight": 0.12,
+      "buy_below": 1.86,
+      "sell_above": 2.08,
+      "stop_loss": 1.7,
+      "grid_step": 0.04,
+      "note": "1.880买入2600份为已报未成交，成交数量0，不计入持仓；后续必须先看QDII溢价。"
     },
     {
       "code": "513310",
       "name": "中韩半导体ETF",
       "cost": 0,
       "shares": 0,
-      "target_weight": 0.00,
+      "target_weight": 0,
       "buy_below": null,
       "sell_above": null,
       "stop_loss": null,
-      "note": "高溢价/停牌风险样本，只观察不追买"
+      "note": "高溢价/停牌风险样本，只观察不追买。"
     }
   ]
 }
