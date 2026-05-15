@@ -1,8 +1,59 @@
 {
-  "snapshot_time": "2026-05-15 16:58:16",
-  "total_capital": 306791.04,
-  "cash": 146748.54,
+  "snapshot_time": "2026-05-15 17:33:04",
+  "broker_snapshot_time": "2026-05-15 16:58:16",
+  "cash_snapshot_time": "2026-05-15 17:33:04",
+  "broker_available_cash": 146748.54,
+  "external_cash_total": 167901.48,
+  "total_capital": 474692.52,
+  "cash": 314650.02,
   "securities_market_value": 160042.5,
+  "cash_accounts": [
+    {
+      "name": "证券账户可用资金",
+      "amount": 146748.54,
+      "liquidity": "T+0/T+1",
+      "note": "券商普通交易账户可用资金"
+    },
+    {
+      "name": "微众银行微众卡",
+      "amount": 155000.0,
+      "liquidity": "T+0",
+      "note": "截图显示微众卡余额，不含活期Plus收益余额"
+    },
+    {
+      "name": "微众银行活期Plus",
+      "amount": 113.61,
+      "liquidity": "T+0",
+      "note": "截图显示活期Plus余额"
+    },
+    {
+      "name": "工商银行存款",
+      "amount": 2609.87,
+      "liquidity": "T+0",
+      "note": "截图显示工行存款"
+    },
+    {
+      "name": "微信零钱",
+      "amount": 3247.05,
+      "liquidity": "T+0",
+      "note": "截图显示微信钱包余额"
+    },
+    {
+      "name": "支付宝灵活取用",
+      "amount": 6174.21,
+      "liquidity": "T+0/T+1",
+      "note": "截图显示支付宝活期资产"
+    },
+    {
+      "name": "支付宝进阶理财",
+      "amount": 756.74,
+      "liquidity": "T+1/基金规则",
+      "note": "易方达全球成长精选混合(QDII)A，按类现金/理财观察，不作为ETF交易现金立即动用"
+    }
+  ],
+  "deployable_cash": 307719.07,
+  "reserve_cash": 6930.95,
+  "cash_policy_note": "cash includes broker available funds plus external cash/cash-like accounts from user screenshots; deployable_cash excludes Alipay reserve/cash-like fund bucket until transferred or redeemed.",
   "reference_profit": 4047.38,
   "daily_profit": -2655.4,
   "max_single_weight": 0.25,
