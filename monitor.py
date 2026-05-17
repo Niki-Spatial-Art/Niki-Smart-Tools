@@ -113,7 +113,13 @@ def safe_float(value, scale: float = 1.0) -> Optional[float]:
         return None
 
 
-def eastmoney_get(url: str, params: Dict, timeout: int = 18) -> Dict:
+def eastmoney_get(
+    url: str,
+    params: Dict,
+    timeout: int = 18,
+    retries: int = 3,
+    warn: bool = True,
+) -> Dict:
     headers = {
         "User-Agent": "Mozilla/5.0 ETF Strategy Monitor",
         "Referer": "https://quote.eastmoney.com/",
@@ -125,7 +131,7 @@ def eastmoney_get(url: str, params: Dict, timeout: int = 18) -> Dict:
     elif "push2delay.eastmoney.com" in url:
         urls.append(url.replace("push2delay.eastmoney.com", "push2.eastmoney.com"))
 
-    for attempt in range(3):
+    for attempt in range(retries):
         for candidate in urls:
             try:
                 response = requests.get(candidate, params=params, headers=headers, timeout=timeout)
@@ -133,7 +139,8 @@ def eastmoney_get(url: str, params: Dict, timeout: int = 18) -> Dict:
                 return response.json()
             except requests.RequestException as exc:
                 last_exc = exc
-                logger.warning("Eastmoney request failed (%s/%s): %s", attempt + 1, candidate, exc)
+                if warn:
+                    logger.warning("Eastmoney request failed (%s/%s): %s", attempt + 1, candidate, exc)
         time.sleep(1 + attempt)
     raise last_exc
 
@@ -300,6 +307,9 @@ def fetch_moving_averages(code: str) -> tuple:
                 "fields1": "f1,f2,f3,f4,f5,f6",
                 "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
             },
+            timeout=int(os.getenv("EASTMONEY_KLINE_TIMEOUT_SECONDS", "6")),
+            retries=int(os.getenv("EASTMONEY_KLINE_RETRIES", "1")),
+            warn=False,
         ).get("data") or {}
         klines = data.get("klines") or []
         closes = [float(item.split(",")[2]) for item in klines if len(item.split(",")) > 2]
@@ -307,7 +317,7 @@ def fetch_moving_averages(code: str) -> tuple:
         ma60 = mean(closes[-60:]) if len(closes) >= 60 else None
         return ma20, ma60
     except Exception as exc:
-        logger.warning("Failed to fetch moving averages for %s: %s", code, exc)
+        logger.info("Moving averages unavailable for %s: %s", code, exc)
         return None, None
 
 
