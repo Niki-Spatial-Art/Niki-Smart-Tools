@@ -101,10 +101,27 @@ def generate_ai_summary(report: Dict) -> str:
             }
         )
 
+    stock_compact = []
+    for item in report.get("stock_radar", {}).get("results", [])[:18]:
+        stock_compact.append(
+            {
+                "code": item["code"],
+                "name": item["name"],
+                "layer": item.get("layer_name"),
+                "price": item["price"],
+                "pct_change": item["pct_change"],
+                "ma20": item["ma20"],
+                "ma60": item["ma60"],
+                "level": item["level"],
+                "action": item["action"],
+                "reasons": item["reasons"][:3],
+            }
+        )
+
     portfolio = report.get("portfolio", {})
 
     prompt = f"""
-请基于下面 ETF 雷达结果，给出中文策略简报。
+请基于下面 ETF 雷达和 AI 产业链个股雷达结果，给出中文策略简报。
 
 要求：
 1. 不要承诺收益，不要说一定会涨。
@@ -118,19 +135,24 @@ def generate_ai_summary(report: Dict) -> str:
 9. 必须提醒今天最容易犯的一个心理错误，例如追涨、锚定成本、亏损后急于扳回、错过后的补偿性买入。
 10. 如果强势标的是 QDII、高溢价、风险公告或当前仓位过高，要把叙事热度降权。
 11. 对趋势仓检查入场规则、头寸规模、止损线和退出条件；不要因为单日突破或强势叙事临时扩大仓位。
+12. 个股部分只做卫星仓候选发现，重点寻找存算一体、存储、光模块、AI芯片、AI服务器中“层级共振 + 龙头确认 + 量价突破”的线索。
+13. 如果只有单只个股强、同层级不强，要提示这可能只是情绪或个股事件，不是主线确认。
 
 账户：
 {json.dumps(portfolio, ensure_ascii=False, indent=2)}
 
-数据：
+ETF 数据：
 {json.dumps(compact, ensure_ascii=False, indent=2)}
+
+AI 产业链个股数据：
+{json.dumps(stock_compact, ensure_ascii=False, indent=2)}
 """.strip()
 
     return chat_completion(
         prompt,
         (
-            "你是一个谨慎的 ETF 交易纪律助手，只做风险提示和执行纪律总结。"
+            "你是一个谨慎的 ETF 与 AI 产业链交易纪律助手，只做风险提示和执行纪律总结。"
             "你的方法是把行情当证据，而不是预言；区分先验、新证据和后验行动；"
-            "同时检查市场反身性、叙事过热、仓位拥挤和趋势仓执行纪律。"
+            "同时检查市场反身性、叙事过热、仓位拥挤、趋势仓执行纪律和个股卫星仓风险。"
         ),
     ) or ""

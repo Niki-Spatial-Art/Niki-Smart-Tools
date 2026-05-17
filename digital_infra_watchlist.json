@@ -51,6 +51,12 @@
       "codes": ["688008", "688525", "301308", "603986", "001309", "688110", "300223", "688766", "688123"]
     },
     {
+      "id": "memory_compute_near_data",
+      "name": "存算一体、边缘AI存储、近存计算",
+      "logic": "群联/Phison CEO多次强调AI瓶颈会从算力扩散到DRAM、NAND、企业级SSD和本地AI存储架构；存算一体属于高弹性早期方向，但商业化和量产风险更高。",
+      "codes": ["688416", "688008", "688525", "301308", "688110", "300223", "603986"]
+    },
+    {
       "id": "semi_equipment_materials",
       "name": "半导体设备、材料、封测",
       "logic": "国产替代和扩产会带动设备、材料、封装测试。",
@@ -89,5 +95,12 @@
     "同层级涨停/大涨家数",
     "是否强于确认ETF",
     "是否连续过热"
+  ],
+  "focus_layers": [
+    "memory_compute_near_data",
+    "memory_hbm_ssd",
+    "optical_cpo",
+    "ai_chips",
+    "ai_servers"
   ]
 }

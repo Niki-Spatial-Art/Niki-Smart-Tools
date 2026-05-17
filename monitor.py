@@ -65,6 +65,7 @@ DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180"}
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
 REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
+DIGITAL_INFRA_FILE = os.getenv("DIGITAL_INFRA_FILE", "digital_infra_watchlist.json")
 
 
 @dataclass
@@ -372,6 +373,18 @@ def load_portfolio() -> Dict:
     return data
 
 
+def load_digital_infra_watchlist() -> Dict:
+    try:
+        with open(DIGITAL_INFRA_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        logger.info("No digital infra watchlist found, stock radar will be skipped")
+        return {}
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid digital infra watchlist, stock radar will be skipped: %s", exc)
+        return {}
+
+
 def watched_codes_from_portfolio(portfolio: Dict) -> List[str]:
     return [
         str(item.get("code", "")).strip()
@@ -390,6 +403,120 @@ def combined_watchlist() -> List[str]:
 
 def position_map(portfolio: Dict) -> Dict[str, Dict]:
     return {str(item.get("code")): item for item in portfolio.get("positions", [])}
+
+
+def digital_infra_layers(watchlist: Dict) -> List[Dict]:
+    layers = watchlist.get("layers") or []
+    focus_raw = os.getenv("AI_STOCK_FOCUS_LAYERS", "")
+    focus_layers = [item.strip() for item in focus_raw.split(",") if item.strip()]
+    if not focus_layers:
+        focus_layers = watchlist.get("focus_layers") or []
+    if not focus_layers:
+        return layers
+    focus_set = set(focus_layers)
+    return [layer for layer in layers if layer.get("id") in focus_set]
+
+
+def classify_stock_quote(quote: Quote, layer: Dict) -> Dict:
+    reasons = []
+    level = "YELLOW"
+    action = "观察，不追"
+    pct = quote.pct_change
+    price = quote.price
+    ma20 = quote.ma20
+    ma60 = quote.ma60
+
+    if price and ma20 and ma60 and price > ma20 > ma60:
+        level = "GREEN"
+        action = "可列入卫星仓候选"
+        reasons.append("价格站上20/60日线，趋势结构较强")
+    elif price and ma20 and price < ma20:
+        reasons.append("价格低于20日线，等待趋势修复")
+
+    if pct is not None:
+        if pct >= 10:
+            level = "RED"
+            action = "禁止追买"
+            reasons.append(f"单日涨幅 {pct:.2f}%，疑似情绪过热")
+        elif pct >= 5:
+            if level != "RED":
+                level = "YELLOW"
+                action = "强势观察，不追"
+            reasons.append(f"单日涨幅 {pct:.2f}%，先等回踩或二次确认")
+        elif pct <= -5:
+            reasons.append(f"单日回撤 {pct:.2f}%，只观察承接")
+
+    if quote.amount and quote.amount > 1_000_000_000:
+        reasons.append("成交额放大，资金关注度提高")
+
+    layer_name = layer.get("name", "")
+    if "存算" in layer_name or "存储" in layer_name:
+        reasons.append("AI存储/存算方向，重点看涨价、订单和量产验证")
+    elif "光" in layer_name or "CPO" in layer_name:
+        reasons.append("AI高速互联方向，重点看订单、速率迭代和海外链确认")
+    elif "芯片" in layer_name:
+        reasons.append("AI芯片方向弹性高，估值和情绪波动也高")
+
+    return {
+        "code": quote.code,
+        "name": quote.name,
+        "layer_id": layer.get("id"),
+        "layer_name": layer_name,
+        "layer_logic": layer.get("logic", ""),
+        "price": quote.price,
+        "pct_change": quote.pct_change,
+        "amount": quote.amount,
+        "ma20": quote.ma20,
+        "ma60": quote.ma60,
+        "level": level,
+        "action": action,
+        "reasons": reasons or ["暂无强信号，保留观察"],
+    }
+
+
+def run_stock_radar() -> Dict:
+    if not env_enabled("AI_STOCK_RADAR_ENABLED", "true"):
+        return {"enabled": False, "watch_count": 0, "results": [], "failures": [], "layers": []}
+
+    watchlist = load_digital_infra_watchlist()
+    layers = digital_infra_layers(watchlist)
+    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "36"))
+    results = []
+    failures = []
+    seen_codes = set()
+
+    for layer in layers:
+        for code in layer.get("codes", []):
+            code = str(code).strip()
+            if not code or code in seen_codes:
+                continue
+            if len(seen_codes) >= max_codes:
+                break
+            seen_codes.add(code)
+            try:
+                quote = fetch_quote(code)
+                item = classify_stock_quote(quote, layer)
+                results.append(item)
+                logger.info("stock %s %s checked", code, quote.name)
+            except Exception as exc:
+                logger.warning("stock %s skipped: %s", code, exc)
+                failures.append({"code": code, "layer": layer.get("name"), "error": str(exc)})
+        if len(seen_codes) >= max_codes:
+            break
+
+    results.sort(
+        key=lambda item: (
+            {"GREEN": 0, "YELLOW": 1, "RED": 2}.get(item.get("level"), 3),
+            -(item.get("pct_change") or -999),
+        )
+    )
+    return {
+        "enabled": True,
+        "watch_count": len(seen_codes),
+        "layers": [{"id": layer.get("id"), "name": layer.get("name")} for layer in layers],
+        "results": results,
+        "failures": failures,
+    }
 
 
 def yuan(value: Optional[float]) -> str:
@@ -510,12 +637,15 @@ def run_radar() -> Dict:
             logger.warning("ETF %s skipped: %s", code, exc)
             failures.append({"code": code, "error": str(exc)})
 
+    stock_radar = run_stock_radar()
+
     return {
         "generated_at": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
         "watch_count": len(watchlist),
         "portfolio": portfolio,
         "results": results,
         "failures": failures,
+        "stock_radar": stock_radar,
     }
 
 
@@ -535,11 +665,15 @@ def fmt(value, suffix: str = "", decimals: int = 2) -> str:
 
 def report_counts(report: Dict) -> Dict[str, int]:
     results = report.get("results", [])
+    stock_results = report.get("stock_radar", {}).get("results", [])
     return {
         "green": sum(1 for item in results if item.get("level") == "GREEN"),
         "yellow": sum(1 for item in results if item.get("level") == "YELLOW"),
         "red": sum(1 for item in results if item.get("level") == "RED"),
         "failures": len(report.get("failures", [])),
+        "stock_green": sum(1 for item in stock_results if item.get("level") == "GREEN"),
+        "stock_yellow": sum(1 for item in stock_results if item.get("level") == "YELLOW"),
+        "stock_red": sum(1 for item in stock_results if item.get("level") == "RED"),
     }
 
 
@@ -616,6 +750,38 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
             )
         )
 
+    stock_radar = report.get("stock_radar", {})
+    stock_results = stock_radar.get("results", [])
+    if stock_radar.get("enabled") and stock_results:
+        lines.extend(
+            [
+                "",
+                "## AI 产业链个股观察",
+                "",
+                f"- 个股扫描数量：{stock_radar.get('watch_count', 0)}",
+                "- 说明：个股只做卫星仓候选发现，默认初始单只不超过账户 2%-3%，不构成投资建议。",
+                "",
+                "| 代码 | 名称 | 层级 | 最新价 | 涨跌幅 | 20日线 | 60日线 | 信号 | 动作 | 原因 |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+            ]
+        )
+        for item in stock_results[:18]:
+            reasons = "；".join(item.get("reasons", []))
+            lines.append(
+                "| {code} | {name} | {layer} | {price} | {pct} | {ma20} | {ma60} | {level} | {action} | {reasons} |".format(
+                    code=markdown_escape(item.get("code")),
+                    name=markdown_escape(item.get("name")),
+                    layer=markdown_escape(item.get("layer_name")),
+                    price=fmt(item.get("price")),
+                    pct=fmt(item.get("pct_change"), "%"),
+                    ma20=fmt(item.get("ma20")),
+                    ma60=fmt(item.get("ma60")),
+                    level=label_for(item.get("level", "")),
+                    action=markdown_escape(item.get("action")),
+                    reasons=markdown_escape(reasons),
+                )
+            )
+
     ai_summary = report.get("ai_summary")
     if ai_summary:
         lines.extend(["", "## AI 策略简报", "", str(ai_summary).strip()])
@@ -643,6 +809,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
         "metadata": build_report_metadata(report, subject),
         "portfolio": report.get("portfolio", {}),
         "results": report.get("results", []),
+        "stock_radar": report.get("stock_radar", {}),
         "failures": report.get("failures", []),
         "ai_summary": report.get("ai_summary", ""),
     }
@@ -698,6 +865,48 @@ def generate_html_email(report: Dict) -> str:
             </tr>
             """
         )
+
+    stock_rows = []
+    stock_radar = report.get("stock_radar", {})
+    for item in stock_radar.get("results", [])[:18]:
+        reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
+        level_color = color_for(item["level"])
+        stock_rows.append(
+            f"""
+            <tr>
+                <td><strong>{html.escape(item['code'])}</strong><br>{html.escape(item['name'])}</td>
+                <td>{html.escape(item.get('layer_name') or '')}</td>
+                <td>{fmt(item['price'])}</td>
+                <td>{fmt(item['pct_change'], '%')}</td>
+                <td>{fmt(item['ma20'])}</td>
+                <td>{fmt(item['ma60'])}</td>
+                <td><span style="color:{level_color}; font-weight:bold;">{label_for(item['level'])}</span><br>{html.escape(item['action'])}</td>
+                <td>{reasons}</td>
+            </tr>
+            """
+        )
+
+    stock_html = ""
+    if stock_rows:
+        stock_html = f"""
+        <h3>AI 产业链个股观察</h3>
+        <div class="sub">
+            扫描 {stock_radar.get('watch_count', 0)} 只个股；用于发现存算一体、存储、光模块、AI芯片、服务器等主线扩散。个股只做卫星仓候选，不构成投资建议。
+        </div>
+        <table>
+            <tr>
+                <th>个股</th>
+                <th>层级</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>20日线</th>
+                <th>60日线</th>
+                <th>信号</th>
+                <th>原因</th>
+            </tr>
+            {''.join(stock_rows)}
+        </table>
+        """
 
     failure_html = ""
     if report["failures"]:
@@ -763,6 +972,7 @@ def generate_html_email(report: Dict) -> str:
                 </tr>
                 {''.join(rows)}
             </table>
+            {stock_html}
             {ai_html}
             {failure_html}
             <div class="footer">
