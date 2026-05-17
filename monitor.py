@@ -565,6 +565,37 @@ def run_stock_radar() -> Dict:
     }
 
 
+def display_stock_results(results: List[Dict]) -> List[Dict]:
+    max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "24"))
+    focus_codes = [
+        code.strip()
+        for code in os.getenv(
+            "AI_STOCK_FOCUS_CODES",
+            "688041,688047,000066,603019,002156,688981,688012,300308,300502,300394,000063",
+        ).split(",")
+        if code.strip()
+    ]
+    by_code = {str(item.get("code")): item for item in results}
+    selected = []
+    selected_codes = set()
+
+    for code in focus_codes:
+        item = by_code.get(code)
+        if item and code not in selected_codes:
+            selected.append(item)
+            selected_codes.add(code)
+
+    for item in results:
+        code = str(item.get("code"))
+        if code not in selected_codes:
+            selected.append(item)
+            selected_codes.add(code)
+        if len(selected) >= max_rows:
+            break
+
+    return selected[:max_rows]
+
+
 def yuan(value: Optional[float]) -> str:
     if value is None:
         return "--"
@@ -891,7 +922,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
             ]
         )
-        for item in stock_results[:18]:
+        for item in display_stock_results(stock_results):
             reasons = "；".join(item.get("reasons", []))
             lines.append(
                 "| {code} | {name} | {layer} | {price} | {pct} | {ma20} | {ma60} | {level} | {action} | {reasons} |".format(
@@ -994,7 +1025,7 @@ def generate_html_email(report: Dict) -> str:
 
     stock_rows = []
     stock_radar = report.get("stock_radar", {})
-    for item in stock_radar.get("results", [])[:18]:
+    for item in display_stock_results(stock_radar.get("results", [])):
         reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
         level_color = color_for(item["level"])
         stock_rows.append(
