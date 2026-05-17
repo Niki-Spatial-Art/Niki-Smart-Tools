@@ -68,6 +68,10 @@ REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
 DIGITAL_INFRA_FILE = os.getenv("DIGITAL_INFRA_FILE", "digital_infra_watchlist.json")
 
 
+def env_enabled(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class Quote:
     code: str
@@ -250,6 +254,37 @@ def fetch_quote(code: str) -> Quote:
             logger.warning("%s quote source %s failed: %s", code, source_name, exc)
             errors.append(f"{source_name}: {exc}")
     raise RuntimeError("; ".join(errors))
+
+
+def fetch_realtime_quote(code: str) -> Quote:
+    """Fetch a lightweight quote without moving averages for wider stock scans."""
+    data = eastmoney_get(
+        "https://push2.eastmoney.com/api/qt/stock/get",
+        {
+            "secid": secid(code),
+            "fields": "f57,f58,f43,f170,f48",
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+        },
+        timeout=10,
+    ).get("data") or {}
+
+    name = data.get("f58") or code
+    price = safe_float(data.get("f43"), 1000)
+    pct_change = safe_float(data.get("f170"), 100)
+    amount = safe_float(data.get("f48"), 1)
+
+    if price is None:
+        raise ValueError("missing price")
+
+    return Quote(
+        code=code,
+        name=name,
+        price=price,
+        pct_change=pct_change,
+        amount=amount,
+        ma20=None,
+        ma60=None,
+    )
 
 
 def fetch_moving_averages(code: str) -> tuple:
@@ -494,7 +529,7 @@ def run_stock_radar() -> Dict:
                 break
             seen_codes.add(code)
             try:
-                quote = fetch_quote(code)
+                quote = fetch_realtime_quote(code)
                 item = classify_stock_quote(quote, layer)
                 results.append(item)
                 logger.info("stock %s %s checked", code, quote.name)
