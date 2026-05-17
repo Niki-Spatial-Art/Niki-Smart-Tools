@@ -42,6 +42,20 @@
       ]
     },
     {
+      "id": "domestic_cpu_compute_base",
+      "name": "国产CPU、信创服务器、计算底座",
+      "logic": "Intel 反转提示市场会重新定价CPU、先进封装、制造和服务器计算底座；A股对应观察海光、龙芯、中国长城、中科曙光、通富微电、中芯国际和中微公司，确认国产CPU是否从信创逻辑扩散到AI算力底座。",
+      "codes": [
+        "688041",
+        "688047",
+        "000066",
+        "603019",
+        "002156",
+        "688981",
+        "688012"
+      ]
+    },
+    {
       "id": "edge_ai_terminal_chips",
       "name": "端侧AI芯片、AI眼镜、终端入口",
       "logic": "如果下一轮AI从云端扩散到端侧，低功耗推理芯片、AI音频、AI眼镜和智能终端入口会先出现量价和订单证据。",
@@ -162,6 +176,21 @@
       ]
     },
     {
+      "id": "foundry_advanced_manufacturing",
+      "name": "晶圆制造、先进制程、国产制造验证",
+      "logic": "中芯国际、华虹等晶圆制造平台是国产AI芯片、存算一体和半导体设备订单的需求侧验证；中微等设备公司是供给侧验证。观察重点是产能、良率、订单、设备导入和板块共振。",
+      "codes": [
+        "688981",
+        "00981",
+        "688347",
+        "01347",
+        "688012",
+        "002371",
+        "688072",
+        "688120"
+      ]
+    },
+    {
       "id": "oled_8p6_flat_panel_equipment",
       "name": "OLED 8.6代线、大平板设备、泛半导体设备",
       "logic": "中微等公司切入大平板PECVD和高世代OLED设备，代表半导体设备向显示、玻璃基板和泛半导体制造扩散；先看订单验证和产线资本开支，不把单条新闻当买入信号。",
@@ -221,7 +250,8 @@
     "515050",
     "159994",
     "159995",
-    "515000"
+    "515000",
+    "513500"
   ],
   "daily_metrics": [
     "涨跌幅",
@@ -236,6 +266,7 @@
     "是否连续过热"
   ],
   "focus_layers": [
+    "domestic_cpu_compute_base",
     "memory_compute_near_data",
     "optical_cpo",
     "network_switching_communication",
@@ -243,6 +274,7 @@
     "edge_ai_terminal_chips",
     "memory_hbm_ssd",
     "oled_8p6_flat_panel_equipment",
-    "ai_servers"
+    "ai_servers",
+    "foundry_advanced_manufacturing"
   ]
 }

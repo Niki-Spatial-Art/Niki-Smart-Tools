@@ -51,6 +51,7 @@ BEIJING_TZ = pytz.timezone("Asia/Shanghai")
 DEFAULT_WATCHLIST = [
     "513310",  # China-Korea Semiconductor ETF, red-light risk sample
     "159696",  # Nasdaq 100 ETF QDII
+    "513500",  # S&P 500 ETF QDII
     "510300",  # CSI 300 ETF
     "510500",  # CSI 500 ETF
     "512100",  # CSI 1000 ETF
@@ -62,7 +63,7 @@ DEFAULT_WATCHLIST = [
 ]
 
 DEFAULT_HIGH_RISK_CODES = {"513310"}
-DEFAULT_QDII_CODES = {"513310", "159696", "513180"}
+DEFAULT_QDII_CODES = {"513310", "159696", "513180", "513500"}
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
 REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
 DIGITAL_INFRA_FILE = os.getenv("DIGITAL_INFRA_FILE", "digital_infra_watchlist.json")

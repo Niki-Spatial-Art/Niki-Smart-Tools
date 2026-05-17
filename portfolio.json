@@ -153,6 +153,18 @@
       "sell_above": null,
       "stop_loss": null,
       "note": "高溢价/停牌风险样本，只观察不追买。"
+    },
+    {
+      "code": "513500",
+      "name": "标普500ETF(QDII)观察",
+      "cost": 0,
+      "shares": 0,
+      "target_weight": 0.08,
+      "buy_below": null,
+      "sell_above": null,
+      "stop_loss": null,
+      "grid_step": 0.04,
+      "note": "场内标普500观察仓；和159696纳指ETF一起用于判断美股AI/科技主线，不在高溢价或美元资产过热时追买。"
     }
   ],
   "capital_plan": {
@@ -222,7 +234,31 @@
       "光模块/CPO/通信交换机",
       "存算一体/近存计算/HBM存储",
       "国产AI芯片/AI服务器/液冷电源",
-      "半导体设备/OLED大平板设备"
-    ]
-  }
+      "半导体设备/OLED大平板设备",
+      "中微公司/中芯国际/国产制造验证"
+    ],
+    "global_asset_monitoring": {
+      "include_off_exchange_funds": true,
+      "off_exchange_platforms": [
+        "支付宝"
+      ],
+      "watch_assets": [
+        "易方达全球成长精选混合(QDII)A",
+        "159696 纳指ETF",
+        "513500 标普500ETF",
+        "513180 恒生科技ETF"
+      ],
+      "rule": "场外基金收益计入全资产复盘；场内纳指/标普用于判断海外AI和全球成长风险偏好；QDII类资产先看溢价、汇率和隔夜美股风险。"
+    }
+  },
+  "off_exchange_funds": [
+    {
+      "name": "易方达全球成长精选混合(QDII)A",
+      "platform": "支付宝",
+      "amount": 756.74,
+      "role": "场外QDII/全球成长观察仓",
+      "liquidity": "按基金赎回规则，通常不是即时交易现金",
+      "monitoring_rule": "计入全资产收益观察，但不计入场内ETF即时可用现金；与纳指、标普、恒生科技一起观察海外成长资产风险敞口。"
+    }
+  ]
 }
