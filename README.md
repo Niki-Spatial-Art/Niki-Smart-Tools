@@ -72,6 +72,14 @@ ETF_QDII_CODES=513310,159696,513180
 触发原因
 ```
 
+## Capital And Return Plan
+
+完整资金全景、70万场外商铺现金流、每月新增资金计划、2026强行情30%冲刺目标和2027资金回流情景见：
+
+[CAPITAL_AND_RETURN_PLAN.md](CAPITAL_AND_RETURN_PLAN.md)
+
+机器可读的关键参数也写入了 [portfolio.json](portfolio.json) 的 `capital_plan` 字段，每日 AI 简报会一起读取。
+
 ## AI Digital Infrastructure
 
 桌面四个录屏里的核心判断已经整理成“AI 数字基础建设”产业链雷达：

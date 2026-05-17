@@ -734,6 +734,85 @@ def build_report_metadata(report: Dict, subject: str) -> Dict:
     }
 
 
+def capital_plan_summary_lines(portfolio: Dict) -> List[str]:
+    plan = portfolio.get("capital_plan") or {}
+    if not plan:
+        return []
+
+    year_end = plan.get("year_end_2026_projection") or {}
+    monthly_new = plan.get("monthly_new_money_plan") or {}
+    off_assets = plan.get("off_platform_assets") or []
+    allocation = plan.get("allocation_policy_for_strong_market") or {}
+    tracks = plan.get("priority_ai_tracks") or []
+
+    lines = [
+        "",
+        "## 年度资金计划",
+        "",
+        f"- 目标：{plan.get('objective', '未设置')}",
+    ]
+    if off_assets:
+        asset = off_assets[0]
+        lines.append(
+            f"- 场外资产：{asset.get('name', '场外资产')} {yuan(asset.get('amount'))}，月现金流 {yuan(asset.get('current_monthly_cashflow'))}"
+        )
+    if monthly_new:
+        lines.append(
+            f"- 每月新增资金：{yuan(monthly_new.get('amount'))}，预计新增 {yuan(monthly_new.get('projected_new_money'))}"
+        )
+    if year_end:
+        lines.extend(
+            [
+                f"- 年底基础资金：{yuan(year_end.get('base_before_market_profit'))}",
+                f"- 强行情目标收益：{fmt((year_end.get('strong_market_target_return') or 0) * 100, '%')}，目标利润 {yuan(year_end.get('strong_market_target_profit_on_current_trading_capital'))}",
+                f"- 强行情目标资金：{yuan(year_end.get('strong_market_target_capital'))}",
+            ]
+        )
+    if allocation:
+        lines.append(
+            "- 仓位纪律：ETF核心 {core}；AI个股卫星 {satellite}；现金 {cash}；单只个股确认后上限 {single}".format(
+                core=allocation.get("core_etf_weight_range", "未设置"),
+                satellite=allocation.get("ai_stock_satellite_weight_range", "未设置"),
+                cash=allocation.get("cash_buffer_weight_range", "未设置"),
+                single=allocation.get("single_stock_confirmed_max_weight", "未设置"),
+            )
+        )
+    if tracks:
+        lines.append("- 优先主线：" + "、".join(str(item) for item in tracks))
+    lines.append("- 纪律：30% 是强行情冲刺目标，不因目标不足反推重仓。")
+    return lines
+
+
+def capital_plan_html(portfolio: Dict) -> str:
+    plan = portfolio.get("capital_plan") or {}
+    if not plan:
+        return ""
+
+    year_end = plan.get("year_end_2026_projection") or {}
+    monthly_new = plan.get("monthly_new_money_plan") or {}
+    off_assets = plan.get("off_platform_assets") or []
+    allocation = plan.get("allocation_policy_for_strong_market") or {}
+    tracks = plan.get("priority_ai_tracks") or []
+    asset_html = ""
+    if off_assets:
+        asset = off_assets[0]
+        asset_html = (
+            f"场外资产：{html.escape(str(asset.get('name', '场外资产')))} "
+            f"{yuan(asset.get('amount'))}，月现金流 {yuan(asset.get('current_monthly_cashflow'))}<br>"
+        )
+    return f"""
+            <div class="note" style="background:#fff8c5; border-left-color:#bf8700;">
+                <strong>年度资金计划</strong><br>
+                目标：{html.escape(str(plan.get('objective', '未设置')))}<br>
+                {asset_html}
+                每月新增：{yuan(monthly_new.get('amount'))}；年底基础资金：{yuan(year_end.get('base_before_market_profit'))}<br>
+                强行情目标：{fmt((year_end.get('strong_market_target_return') or 0) * 100, '%')}；目标利润：{yuan(year_end.get('strong_market_target_profit_on_current_trading_capital'))}；目标资金：{yuan(year_end.get('strong_market_target_capital'))}<br>
+                仓位纪律：ETF核心 {html.escape(str(allocation.get('core_etf_weight_range', '未设置')))}；AI个股卫星 {html.escape(str(allocation.get('ai_stock_satellite_weight_range', '未设置')))}；现金 {html.escape(str(allocation.get('cash_buffer_weight_range', '未设置')))}；单只确认上限 {html.escape(str(allocation.get('single_stock_confirmed_max_weight', '未设置')))}。<br>
+                优先主线：{html.escape('、'.join(str(item) for item in tracks))}
+            </div>
+    """
+
+
 def generate_markdown_report(report: Dict, subject: str) -> str:
     metadata = build_report_metadata(report, subject)
     portfolio = report.get("portfolio", {})
@@ -754,6 +833,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         f"- 总资金：{yuan(portfolio.get('total_capital'))}",
         f"- 现金：{yuan(portfolio.get('cash'))}",
         f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
+        *capital_plan_summary_lines(portfolio),
         "",
         "## 雷达结果",
         "",
@@ -994,6 +1074,7 @@ def generate_html_email(report: Dict) -> str:
                 现金：{yuan(report.get('portfolio', {}).get('cash'))}；
                 单只ETF上限：{fmt((report.get('portfolio', {}).get('max_single_weight') or 0) * 100, '%')}。
             </div>
+            {capital_plan_html(report.get('portfolio', {}))}
             <table>
                 <tr>
                     <th>标的</th>

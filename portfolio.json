@@ -16,7 +16,7 @@
     },
     {
       "name": "微众银行微众卡",
-      "amount": 155000.0,
+      "amount": 155000,
       "liquidity": "T+0",
       "note": "截图显示微众卡余额，不含活期Plus收益余额"
     },
@@ -154,5 +154,75 @@
       "stop_loss": null,
       "note": "高溢价/停牌风险样本，只观察不追买。"
     }
-  ]
+  ],
+  "capital_plan": {
+    "updated_at": "2026-05-17",
+    "objective": "用ETF核心仓 + AI产业链个股卫星仓，在强行情中冲刺全年30%收益目标；目标用于规划，不用于反推重仓。",
+    "current_trading_capital": 474692.52,
+    "off_platform_assets": [
+      {
+        "name": "家庭商铺投资本金",
+        "amount": 700000,
+        "current_monthly_cashflow": 3000,
+        "implied_annual_yield": 0.0514,
+        "liquidity_note": "2026年仍按场外固定现金流资产处理；若2026年表现稳定，计划2027年收回并纳入可调度资金。"
+      }
+    ],
+    "monthly_new_money_plan": {
+      "amount": 10000,
+      "start_month": "2026-06",
+      "through_month": "2026-12",
+      "months_count": 7,
+      "projected_new_money": 70000
+    },
+    "year_end_2026_projection": {
+      "base_before_market_profit": 565692.52,
+      "includes_current_trading_capital": 474692.52,
+      "includes_new_money": 70000,
+      "includes_shop_cashflow": 21000,
+      "strong_market_target_return": 0.3,
+      "strong_market_target_profit_on_current_trading_capital": 142407.76,
+      "strong_market_target_capital": 708100.28,
+      "note": "30%是强行情冲刺目标，不是承诺收益；若趋势不确认，优先保留现金和仓位纪律。"
+    },
+    "if_shop_principal_returns_2027": {
+      "projected_investable_base_before_2026_market_profit": 1265692.52,
+      "target_return_ladder": [
+        {
+          "return_rate": 0.1,
+          "profit": 126569.25,
+          "meaning": "超过商铺固定现金流，属于稳健改善"
+        },
+        {
+          "return_rate": 0.15,
+          "profit": 189853.88,
+          "meaning": "较好的主动投资目标"
+        },
+        {
+          "return_rate": 0.2,
+          "profit": 253138.5,
+          "meaning": "进攻但仍需纪律控制"
+        },
+        {
+          "return_rate": 0.3,
+          "profit": 379707.76,
+          "meaning": "强行情目标，需要主线确认和较高波动承受"
+        }
+      ]
+    },
+    "allocation_policy_for_strong_market": {
+      "core_etf_weight_range": "50%-60%",
+      "ai_stock_satellite_weight_range": "20%-30%",
+      "cash_buffer_weight_range": "10%-25%",
+      "single_stock_initial_weight": "1%-3%",
+      "single_stock_confirmed_max_weight": "8%",
+      "rule": "个股仓位只能因板块共振、订单/业绩证据、放量突破而增加；不能因为年度收益目标不足而加仓。"
+    },
+    "priority_ai_tracks": [
+      "光模块/CPO/通信交换机",
+      "存算一体/近存计算/HBM存储",
+      "国产AI芯片/AI服务器/液冷电源",
+      "半导体设备/OLED大平板设备"
+    ]
+  }
 }
