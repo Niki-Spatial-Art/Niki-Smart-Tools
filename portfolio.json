@@ -1,12 +1,12 @@
 {
-  "snapshot_time": "2026-05-15 17:33:04",
-  "broker_snapshot_time": "2026-05-15 16:58:16",
+  "snapshot_time": "2026-05-18 16:04:27",
+  "broker_snapshot_time": "2026-05-18 16:04:27",
   "cash_snapshot_time": "2026-05-15 17:33:04",
   "broker_available_cash": 146748.54,
   "external_cash_total": 167901.48,
-  "total_capital": 474692.52,
+  "total_capital": 473903.52,
   "cash": 314650.02,
-  "securities_market_value": 160042.5,
+  "securities_market_value": 159253.5,
   "cash_accounts": [
     {
       "name": "证券账户可用资金",
@@ -54,8 +54,8 @@
   "deployable_cash": 307719.07,
   "reserve_cash": 6930.95,
   "cash_policy_note": "cash includes broker available funds plus external cash/cash-like accounts from user screenshots; deployable_cash excludes Alipay reserve/cash-like fund bucket until transferred or redeemed.",
-  "reference_profit": 4047.38,
-  "daily_profit": -2655.4,
+  "reference_profit": 3258.38,
+  "daily_profit": -789.0,
   "max_single_weight": 0.25,
   "default_buy_amount": 10000,
   "positions": [
@@ -168,9 +168,9 @@
     }
   ],
   "capital_plan": {
-    "updated_at": "2026-05-17",
+    "updated_at": "2026-05-18",
     "objective": "用ETF核心仓 + AI产业链个股卫星仓，在强行情中冲刺全年30%收益目标；目标用于规划，不用于反推重仓。",
-    "current_trading_capital": 474692.52,
+    "current_trading_capital": 473903.52,
     "off_platform_assets": [
       {
         "name": "家庭商铺投资本金",
@@ -188,17 +188,17 @@
       "projected_new_money": 70000
     },
     "year_end_2026_projection": {
-      "base_before_market_profit": 565692.52,
-      "includes_current_trading_capital": 474692.52,
+      "base_before_market_profit": 564903.52,
+      "includes_current_trading_capital": 473903.52,
       "includes_new_money": 70000,
       "includes_shop_cashflow": 21000,
       "strong_market_target_return": 0.3,
-      "strong_market_target_profit_on_current_trading_capital": 142407.76,
-      "strong_market_target_capital": 708100.28,
+      "strong_market_target_profit_on_current_trading_capital": 142171.06,
+      "strong_market_target_capital": 707074.58,
       "note": "30%是强行情冲刺目标，不是承诺收益；若趋势不确认，优先保留现金和仓位纪律。"
     },
     "if_shop_principal_returns_2027": {
-      "projected_investable_base_before_2026_market_profit": 1265692.52,
+      "projected_investable_base_before_2026_market_profit": 1264903.52,
       "target_return_ladder": [
         {
           "return_rate": 0.1,
