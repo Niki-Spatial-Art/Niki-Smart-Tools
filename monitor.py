@@ -284,14 +284,18 @@ def fetch_realtime_quote(code: str) -> Quote:
     if price is None:
         raise ValueError("missing price")
 
+    ma20, ma60 = (None, None)
+    if code in focus_stock_codes() and env_enabled("AI_STOCK_FOCUS_MA_ENABLED", "true"):
+        ma20, ma60 = fetch_moving_averages(code)
+
     return Quote(
         code=code,
         name=name,
         price=price,
         pct_change=pct_change,
         amount=amount,
-        ma20=None,
-        ma60=None,
+        ma20=ma20,
+        ma60=ma60,
     )
 
 
@@ -307,8 +311,8 @@ def fetch_moving_averages(code: str) -> tuple:
                 "fields1": "f1,f2,f3,f4,f5,f6",
                 "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
             },
-            timeout=int(os.getenv("EASTMONEY_KLINE_TIMEOUT_SECONDS", "6")),
-            retries=int(os.getenv("EASTMONEY_KLINE_RETRIES", "1")),
+            timeout=int(os.getenv("EASTMONEY_KLINE_TIMEOUT_SECONDS", "8")),
+            retries=int(os.getenv("EASTMONEY_KLINE_RETRIES", "2")),
             warn=False,
         ).get("data") or {}
         klines = data.get("klines") or []
@@ -319,6 +323,16 @@ def fetch_moving_averages(code: str) -> tuple:
     except Exception as exc:
         logger.info("Moving averages unavailable for %s: %s", code, exc)
         return None, None
+
+
+def focus_stock_codes() -> set:
+    raw = os.getenv(
+        "AI_STOCK_FOCUS_CODES",
+        "688041,688047,000066,603019,002156,688981,688012,300308,300502,300394,000063,"
+        "601728,002747,002472,300124,688017,002085,000099,688297,601698,600118,300045,"
+        "688111,300033,688808,603986,002371,688072,688120,002409,600584,000021,000032",
+    )
+    return {code.strip() for code in raw.split(",") if code.strip()}
 
 
 def classify_quote(quote: Quote, high_risk_codes: set, qdii_codes: set) -> Dict:
@@ -526,7 +540,7 @@ def run_stock_radar() -> Dict:
 
     watchlist = load_digital_infra_watchlist()
     layers = digital_infra_layers(watchlist)
-    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "36"))
+    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "80"))
     results = []
     failures = []
     seen_codes = set()
@@ -566,15 +580,8 @@ def run_stock_radar() -> Dict:
 
 
 def display_stock_results(results: List[Dict]) -> List[Dict]:
-    max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "24"))
-    focus_codes = [
-        code.strip()
-        for code in os.getenv(
-            "AI_STOCK_FOCUS_CODES",
-            "688041,688047,000066,603019,002156,688981,688012,300308,300502,300394,000063",
-        ).split(",")
-        if code.strip()
-    ]
+    max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "32"))
+    focus_codes = list(focus_stock_codes())
     by_code = {str(item.get("code")): item for item in results}
     selected = []
     selected_codes = set()
