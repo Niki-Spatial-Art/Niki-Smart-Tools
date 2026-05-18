@@ -108,10 +108,46 @@ Priority short-term tracks:
 Daily operating rhythm:
 
 ```text
+09:10 Pre-market plan: read candidates, risk notes, and position limits. Do not place an order.
 09:45 Opening scan: do not chase the first spike.
 10:45 Resonance scan: at least 2-3 names in one layer must confirm.
 13:45 Continuation scan: check whether morning strength survives.
 14:40 Execution window: only act on pre-defined buy, sell, or reduce rules.
+```
+
+## 2026-05-19 Short-Term Pilot
+
+This is a familiarity test, not a profit target.
+
+```text
+Date: 2026-05-19
+Stage: Day 1 short-term pilot
+Capital per stock: 8,000
+Maximum stocks: 2
+Maximum pilot capital: 16,000
+Candidates: 600498 Fenghuo Communication, 300054 Dinglong
+Expected result if both rise 3%: about 480
+Expected result if both rise 5%: about 800
+Expected result if both fall 3%: about -480
+```
+
+Time windows:
+
+```text
+09:10 Read the pre-market plan. Rank candidates and check risk. No order.
+09:40 First decision window. Enter only if volume and layer strength confirm.
+10:45 Second confirmation window. If the trade does not continue, lower expectations.
+14:40 Exit/hold window. Decide whether to take profit, stop loss, or hold overnight.
+```
+
+Hard rules:
+
+```text
+1. Do not exceed 8,000 per stock on the first pilot day.
+2. Do not hold more than two pilot stocks.
+3. If a stock opens with a fast 5%+ spike, default to no chase.
+4. If loss approaches 3%, accept the test failure and do not average down.
+5. Missing the first candle is allowed. Chasing after missing is not allowed.
 ```
 
 Short-term entry rules:

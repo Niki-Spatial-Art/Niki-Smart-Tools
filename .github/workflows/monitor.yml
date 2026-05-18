@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # GitHub cron uses UTC.
-    # Beijing time: 09:45, 11:35, 14:50, 21:30 on weekdays.
+    # Beijing time: 09:10, 09:45, 11:35, 14:50, 21:30 on weekdays.
+    - cron: '10 1 * * 1-5'
     - cron: '45 1 * * 1-5'
     - cron: '35 3 * * 1-5'
     - cron: '50 6 * * 1-5'

@@ -329,7 +329,7 @@ def focus_stock_codes() -> set:
     raw = os.getenv(
         "AI_STOCK_FOCUS_CODES",
         "688041,688047,000066,603019,002156,688981,688012,300308,300502,300394,000063,"
-        "601728,002747,002472,300124,688017,002085,000099,688297,601698,600118,300045,"
+        "601728,600498,300054,002747,002472,300124,688017,002085,000099,688297,601698,600118,300045,"
         "688111,300033,688808,603986,002371,688072,688120,002409,600584,000021,000032",
     )
     return {code.strip() for code in raw.split(",") if code.strip()}
@@ -702,6 +702,40 @@ def evaluate_strategy(item: Dict, portfolio: Dict) -> Dict:
     }
 
 
+def trading_session_context(now: Optional[datetime] = None) -> Dict:
+    now = now or datetime.now(BEIJING_TZ)
+    current = now.strftime("%H:%M")
+    if "09:00" <= current < "09:30":
+        return {
+            "label": "盘前预案",
+            "next_decision_time": "09:40",
+            "guidance": "只看候选和风险，不下单；9:40再看是否放量确认。",
+        }
+    if "09:30" <= current < "10:50":
+        return {
+            "label": "早盘确认",
+            "next_decision_time": "10:45",
+            "guidance": "只允许小仓试单；急拉超过5%默认不追，等二次确认。",
+        }
+    if "13:00" <= current < "14:30":
+        return {
+            "label": "午后延续",
+            "next_decision_time": "14:40",
+            "guidance": "检查上午强势是否延续；不把弱反弹当突破。",
+        }
+    if "14:30" <= current <= "15:10":
+        return {
+            "label": "尾盘处理",
+            "next_decision_time": "收盘复盘",
+            "guidance": "按计划决定止盈、止损或是否隔夜，不临时扩大仓位。",
+        }
+    return {
+        "label": "复盘计划",
+        "next_decision_time": "下个交易日09:10",
+        "guidance": "整理候选池和纪律，不做盘后冲动决策。",
+    }
+
+
 def run_radar() -> Dict:
     high_risk_codes = split_env_set("ETF_HIGH_RISK_CODES", DEFAULT_HIGH_RISK_CODES)
     qdii_codes = split_env_set("ETF_QDII_CODES", DEFAULT_QDII_CODES)
@@ -723,8 +757,10 @@ def run_radar() -> Dict:
 
     stock_radar = run_stock_radar()
 
+    now = datetime.now(BEIJING_TZ)
     return {
-        "generated_at": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "session": trading_session_context(now),
         "watch_count": len(watchlist),
         "portfolio": portfolio,
         "results": results,
@@ -832,6 +868,32 @@ def capital_plan_summary_lines(portfolio: Dict) -> List[str]:
     return lines
 
 
+def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
+    pilot = (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
+    if not pilot or not pilot.get("enabled"):
+        return []
+
+    candidates = pilot.get("candidate_codes") or []
+    candidate_text = "、".join(
+        f"{item.get('code')} {item.get('name')}" for item in candidates if item.get("code")
+    )
+    windows = pilot.get("time_windows") or []
+    window_text = "；".join(
+        f"{item.get('time')} {item.get('action')}" for item in windows if item.get("time")
+    )
+    return [
+        "",
+        "## 短线试运行",
+        "",
+        f"- 日期：{pilot.get('pilot_date', '未设置')}；阶段：{pilot.get('stage', '熟悉度测试')}",
+        f"- 资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
+        f"- 候选：{candidate_text}",
+        f"- 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}",
+        f"- 时间：{window_text}",
+        "- 硬规则：9:10只看预案，9:40以后才允许小仓试单；错过第一波不是错误，追高才是错误。",
+    ]
+
+
 def capital_plan_html(portfolio: Dict) -> str:
     plan = portfolio.get("capital_plan") or {}
     if not plan:
@@ -862,9 +924,46 @@ def capital_plan_html(portfolio: Dict) -> str:
     """
 
 
+def short_term_pilot_html(portfolio: Dict) -> str:
+    pilot = (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
+    if not pilot or not pilot.get("enabled"):
+        return ""
+
+    candidates = pilot.get("candidate_codes") or []
+    candidate_html = "<br>".join(
+        "{code} {name}：{theme}；{entry}".format(
+            code=html.escape(str(item.get("code", ""))),
+            name=html.escape(str(item.get("name", ""))),
+            theme=html.escape(str(item.get("theme", ""))),
+            entry=html.escape(str(item.get("entry_rule", ""))),
+        )
+        for item in candidates
+    )
+    windows = pilot.get("time_windows") or []
+    window_html = "<br>".join(
+        f"{html.escape(str(item.get('time', '')))}：{html.escape(str(item.get('action', '')))}"
+        for item in windows
+    )
+    hard_rules = pilot.get("hard_rules") or []
+    hard_rule_html = "<br>".join(html.escape(str(rule)) for rule in hard_rules)
+
+    return f"""
+            <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
+                <strong>短线试运行：{html.escape(str(pilot.get('pilot_date', '未设置')))} {html.escape(str(pilot.get('stage', '熟悉度测试')))}</strong><br>
+                目标：{html.escape(str(pilot.get('goal', '先练执行，不追求大额盈利。')))}<br>
+                资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
+                测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}。<br>
+                <strong>候选</strong><br>{candidate_html}<br>
+                <strong>时间窗口</strong><br>{window_html}<br>
+                <strong>硬规则</strong><br>{hard_rule_html}
+            </div>
+    """
+
+
 def generate_markdown_report(report: Dict, subject: str) -> str:
     metadata = build_report_metadata(report, subject)
     portfolio = report.get("portfolio", {})
+    session = report.get("session", {})
     lines = [
         f"# {subject}",
         "",
@@ -876,6 +975,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         f"- 绿色/黄色/红色：{metadata['green_count']} / {metadata['yellow_count']} / {metadata['red_count']}",
         f"- 数据缺口：{metadata['failure_count']}",
         "- 说明：仅作交易纪律提醒，不构成投资建议。",
+        f"- 当前窗口：{session.get('label', '复盘计划')}；下一决策点：{session.get('next_decision_time', '下个交易日09:10')}；提示：{session.get('guidance', '')}",
         "",
         "## 账户配置",
         "",
@@ -883,6 +983,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         f"- 现金：{yuan(portfolio.get('cash'))}",
         f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
         *capital_plan_summary_lines(portfolio),
+        *short_term_pilot_summary_lines(portfolio),
         "",
         "## 雷达结果",
         "",
@@ -971,6 +1072,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
 
     payload = {
         "metadata": build_report_metadata(report, subject),
+        "session": report.get("session", {}),
         "portfolio": report.get("portfolio", {}),
         "results": report.get("results", []),
         "stock_radar": report.get("stock_radar", {}),
@@ -993,6 +1095,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
 
 def generate_html_email(report: Dict) -> str:
     ai_summary = report.get("ai_summary", "")
+    session = report.get("session", {})
 
     rows = []
     for item in report["results"]:
@@ -1117,6 +1220,11 @@ def generate_html_email(report: Dict) -> str:
         <div class="container">
             <h2>ETF Strategy Monitor</h2>
             <div class="sub">生成时间：{html.escape(report['generated_at'])} 北京时间。仅作交易纪律提醒，不构成投资建议。</div>
+            <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
+                <strong>{html.escape(str(session.get('label', '复盘计划')))}</strong><br>
+                下一决策点：{html.escape(str(session.get('next_decision_time', '下个交易日09:10')))}<br>
+                {html.escape(str(session.get('guidance', '整理候选池和纪律，不做冲动决策。')))}
+            </div>
             <div class="note" style="background:#f6f8fa; border-left-color:#57606a;">
                 <strong>账户配置</strong><br>
                 总资金：{yuan(report.get('portfolio', {}).get('total_capital'))}；
@@ -1124,6 +1232,7 @@ def generate_html_email(report: Dict) -> str:
                 单只ETF上限：{fmt((report.get('portfolio', {}).get('max_single_weight') or 0) * 100, '%')}。
             </div>
             {capital_plan_html(report.get('portfolio', {}))}
+            {short_term_pilot_html(report.get('portfolio', {}))}
             <table>
                 <tr>
                     <th>标的</th>
@@ -1175,7 +1284,8 @@ def main() -> bool:
     )
 
     counts = report_counts(report)
-    subject = f"ETF雷达：绿色{counts['green']}个 / 红色{counts['red']}个 - {report['generated_at']}"
+    session_label = report.get("session", {}).get("label", "雷达")
+    subject = f"ETF雷达[{session_label}]：绿色{counts['green']}个 / 红色{counts['red']}个 - {report['generated_at']}"
     html_content = generate_html_email(report)
     save_report_archive(report, subject)
 
