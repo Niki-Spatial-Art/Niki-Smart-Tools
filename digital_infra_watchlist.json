@@ -259,6 +259,25 @@
       ]
     },
     {
+      "id": "green_power_compute_coordination",
+      "name": "绿电运营、算电协同、电力运营商",
+      "logic": "AI算力设施需要稳定、低碳、可交易的绿色电力。四部门推动人工智能与能源双向赋能后，绿电占比、绿电直连、绿证绿电交易和算电协同会从概念进入项目落地阶段；该层级用于观察绿电运营商和电力运营商是否成为AI算力扩容的增量收益方向。",
+      "codes": [
+        "600905",
+        "601016",
+        "601985",
+        "600900",
+        "600795",
+        "600011",
+        "600027",
+        "600021",
+        "000539",
+        "000875",
+        "000591",
+        "600163"
+      ]
+    },
+    {
       "id": "grid_power_equipment",
       "name": "电力、电网、变压器、线缆",
       "logic": "AI数据中心本质是电力负载，算力建设会把压力传导到电网和电力设备。",
@@ -383,6 +402,7 @@
     "ai_servers",
     "foundry_advanced_manufacturing",
     "cooling_power",
+    "green_power_compute_coordination",
     "grid_power_equipment",
     "humanoid_robotics",
     "low_altitude_economy",

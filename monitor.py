@@ -546,7 +546,7 @@ def run_stock_radar() -> Dict:
 
     watchlist = load_digital_infra_watchlist()
     layers = digital_infra_layers(watchlist)
-    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "80"))
+    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "130"))
     results = []
     failures = []
     seen_codes = set()
@@ -586,7 +586,7 @@ def run_stock_radar() -> Dict:
 
 
 def display_stock_results(results: List[Dict]) -> List[Dict]:
-    max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "32"))
+    max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "40"))
     focus_codes = list(focus_stock_codes())
     by_code = {str(item.get("code")): item for item in results}
     selected = []

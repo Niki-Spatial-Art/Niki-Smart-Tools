@@ -103,6 +103,7 @@ Priority short-term tracks:
 6. Low-altitude economy / drones / eVTOL / air traffic control
 7. Commercial space / satellite internet / navigation and remote sensing
 8. AI applications / office software / education / content / fintech
+9. Green power operators / compute-power coordination / green certificate and green electricity trading
 ```
 
 Daily operating rhythm:
@@ -113,6 +114,79 @@ Daily operating rhythm:
 10:45 Resonance scan: at least 2-3 names in one layer must confirm.
 13:45 Continuation scan: check whether morning strength survives.
 14:40 Execution window: only act on pre-defined buy, sell, or reduce rules.
+```
+
+## Quant Reference Architecture
+
+Reference date: 2026-05-19
+
+This system should learn the structure of professional quantitative firms, not try to copy their scale. A personal account cannot compete with institutional low latency, financing, full market data, or execution infrastructure. The useful part to copy is the process discipline.
+
+Lingjun-style lessons for this account:
+
+```text
+1. Multi-cycle signals: keep short, medium, and long signals separate.
+2. Factor expansion: combine price/volume with fundamentals, news, announcements, research notes, and policy signals.
+3. AI as research assistant: use AI to summarize filings, news, sector resonance, and rule violations, not to override risk controls.
+4. Three-line defense: strategy risk, trading/execution risk, and operations risk must all pass before a trade.
+5. Talent loop for one person: after each trade, write the setup, execution, result, and mistake; this is the personal version of researcher training.
+```
+
+XTX-style lessons for this account:
+
+```text
+1. Prediction first: every candidate needs an expected direction, expected holding period, and invalidation condition.
+2. Execution quality matters: avoid chasing wide spreads or emotional spikes; use limit orders and predefined windows.
+3. Risk inventory: every open position is inventory with a holding cost, not a story to defend.
+4. Liquidity filter: only trade stocks with enough turnover for clean entry and exit.
+5. Technology edge: automate monitoring, logs, and alerts before increasing position size.
+```
+
+Personal quant system modules:
+
+```text
+Data layer:
+- Quotes, volume, turnover, amount, limit-up/down state.
+- ETF trend and market style.
+- Announcements, research headlines, policy/news catalysts.
+
+Signal layer:
+- Trend: price above key averages, higher highs, sector confirmation.
+- Reversal/grid: ETF falls to predefined buy zone with no structural break.
+- Event/catalyst: announcement or order evidence plus same-layer response.
+- Heat filter: fast 5%+ spikes are treated as no-chase unless there is second confirmation.
+
+Portfolio layer:
+- ETF core: slow beta and grid.
+- Stock satellite: only short-term probes at 0.5%-1% first position.
+- Permission filter: exclude stocks that the account cannot trade, such as ChiNext or STAR names without account permission.
+
+Execution layer:
+- 09:10 plan only.
+- 09:40 first decision.
+- 10:45 confirmation or lower expectation.
+- 14:40 hold/reduce/exit decision.
+- Use limit orders; no market chasing.
+
+Risk layer:
+- Per pilot trade stop loss around 3%.
+- No intraday averaging down.
+- No new trade if emotional state is revenge, panic, or missed-move compensation.
+- If quote scale or data quality is abnormal, signal is invalid until checked.
+
+Review layer:
+- End-of-day trade journal.
+- Weekly summary of win rate, average win/loss, rule violations, and missed trades.
+- Increase capital only after at least 20 pilot trades with controlled drawdown.
+```
+
+Upgrade path:
+
+```text
+Phase 1, 2026-05 to 2026-06: manual pilot with 8,000 per stock, max 16,000 total.
+Phase 2, 2026-07 to 2026-08: add backtest sheets and daily trade journal; no larger size unless rules are followed.
+Phase 3, 2026-09: decide whether the system has enough evidence to increase capital or retrieve outside principal.
+Phase 4, after permissions and API access are ready: connect broker data/export, but still keep human confirmation before orders.
 ```
 
 ## 2026-05-19 Short-Term Pilot
