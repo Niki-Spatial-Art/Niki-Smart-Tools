@@ -1,16 +1,16 @@
 {
-  "snapshot_time": "2026-05-18 16:04:27",
-  "broker_snapshot_time": "2026-05-18 16:04:27",
+  "snapshot_time": "2026-05-19 14:09:00",
+  "broker_snapshot_time": "2026-05-19 14:09:00",
   "cash_snapshot_time": "2026-05-15 17:33:04",
-  "broker_available_cash": 146748.54,
+  "broker_available_cash": 141110.44,
   "external_cash_total": 167901.48,
-  "total_capital": 473903.52,
-  "cash": 314650.02,
-  "securities_market_value": 159253.5,
+  "total_capital": 473898.42,
+  "cash": 309011.92,
+  "securities_market_value": 164886.5,
   "cash_accounts": [
     {
       "name": "证券账户可用资金",
-      "amount": 146748.54,
+      "amount": 141110.44,
       "liquidity": "T+0/T+1",
       "note": "券商普通交易账户可用资金"
     },
@@ -51,11 +51,11 @@
       "note": "易方达全球成长精选混合(QDII)A，按类现金/理财观察，不作为ETF交易现金立即动用"
     }
   ],
-  "deployable_cash": 307719.07,
+  "deployable_cash": 302080.97,
   "reserve_cash": 6930.95,
   "cash_policy_note": "cash includes broker available funds plus external cash/cash-like accounts from user screenshots; deployable_cash excludes Alipay reserve/cash-like fund bucket until transferred or redeemed.",
-  "reference_profit": 3258.38,
-  "daily_profit": -789.0,
+  "reference_profit": 3253.28,
+  "daily_profit": -794.1,
   "max_single_weight": 0.25,
   "default_buy_amount": 10000,
   "positions": [
@@ -153,6 +153,18 @@
       "sell_above": null,
       "stop_loss": null,
       "note": "高溢价/停牌风险样本，只观察不追买。"
+    },
+    {
+      "code": "600498",
+      "name": "烽火通信",
+      "cost": 56.381,
+      "shares": 100,
+      "target_weight": 0.017,
+      "buy_below": null,
+      "sell_above": 58.07,
+      "stop_loss": 54.69,
+      "grid_step": 0.03,
+      "note": "2026-05-19短线试运行训练单，100股，买入成本56.381。T+1，买入当日可用0股，不能卖出；明日若跌破54.69止损，站上58.07观察止盈，强势目标约59.20。不加仓。"
     },
     {
       "code": "513500",
