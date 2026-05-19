@@ -113,6 +113,12 @@ def safe_float(value, scale: float = 1.0) -> Optional[float]:
         return None
 
 
+def eastmoney_price_float(code: str, value) -> Optional[float]:
+    if code.startswith(("510", "511", "512", "513", "515", "516", "517", "518", "588", "159")):
+        return safe_float(value, 1000)
+    return safe_float(value, 100)
+
+
 def eastmoney_get(
     url: str,
     params: Dict,
@@ -156,7 +162,7 @@ def fetch_quote_eastmoney(code: str) -> Quote:
     ).get("data") or {}
 
     name = data.get("f58") or code
-    price = safe_float(data.get("f43"), 1000)
+    price = eastmoney_price_float(code, data.get("f43"))
     pct_change = safe_float(data.get("f170"), 100)
     amount = safe_float(data.get("f48"), 1)
 
@@ -277,7 +283,7 @@ def fetch_realtime_quote(code: str) -> Quote:
     ).get("data") or {}
 
     name = data.get("f58") or code
-    price = safe_float(data.get("f43"), 1000)
+    price = eastmoney_price_float(code, data.get("f43"))
     pct_change = safe_float(data.get("f170"), 100)
     amount = safe_float(data.get("f48"), 1)
 
