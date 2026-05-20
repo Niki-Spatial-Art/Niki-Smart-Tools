@@ -1203,6 +1203,7 @@ def capital_plan_summary_lines(portfolio: Dict) -> List[str]:
     monthly_new = plan.get("monthly_new_money_plan") or {}
     off_assets = plan.get("off_platform_assets") or []
     allocation = plan.get("allocation_policy_for_strong_market") or {}
+    deployment = plan.get("liquidity_deployment_plan") or {}
     tracks = plan.get("priority_ai_tracks") or []
 
     lines = [
@@ -1236,6 +1237,19 @@ def capital_plan_summary_lines(portfolio: Dict) -> List[str]:
                 cash=allocation.get("cash_buffer_weight_range", "未设置"),
                 single=allocation.get("single_stock_confirmed_max_weight", "未设置"),
             )
+        )
+    if deployment:
+        lines.extend(
+            [
+                "- 现金分层：阶段1主动资金 {active}；ETF核心目标 {core_target}；短线桶 {bucket}；单日新开仓上限 {daily_limit}".format(
+                    active=yuan(deployment.get("stage_1_active_capital")),
+                    core_target=yuan(deployment.get("stage_1_core_etf_target_value")),
+                    bucket=yuan(deployment.get("stage_1_short_term_bucket")),
+                    daily_limit=yuan(deployment.get("stage_1_max_new_buy_per_day")),
+                ),
+                f"- 外部活钱规则：{deployment.get('external_cash_transfer_rule', '')}",
+                f"- 商铺本金规则：{deployment.get('shop_principal_rule', '')}",
+            ]
         )
     if tracks:
         lines.append("- 优先主线：" + "、".join(str(item) for item in tracks))
@@ -1288,6 +1302,7 @@ def capital_plan_html(portfolio: Dict) -> str:
     monthly_new = plan.get("monthly_new_money_plan") or {}
     off_assets = plan.get("off_platform_assets") or []
     allocation = plan.get("allocation_policy_for_strong_market") or {}
+    deployment = plan.get("liquidity_deployment_plan") or {}
     tracks = plan.get("priority_ai_tracks") or []
     asset_html = ""
     if off_assets:
@@ -1304,6 +1319,9 @@ def capital_plan_html(portfolio: Dict) -> str:
                 每月新增：{yuan(monthly_new.get('amount'))}；年底基础资金：{yuan(year_end.get('base_before_market_profit'))}<br>
                 强行情目标：{fmt((year_end.get('strong_market_target_return') or 0) * 100, '%')}；目标利润：{yuan(year_end.get('strong_market_target_profit_on_current_trading_capital'))}；目标资金：{yuan(year_end.get('strong_market_target_capital'))}<br>
                 仓位纪律：ETF核心 {html.escape(str(allocation.get('core_etf_weight_range', '未设置')))}；AI个股卫星 {html.escape(str(allocation.get('ai_stock_satellite_weight_range', '未设置')))}；现金 {html.escape(str(allocation.get('cash_buffer_weight_range', '未设置')))}；单只确认上限 {html.escape(str(allocation.get('single_stock_confirmed_max_weight', '未设置')))}。<br>
+                现金分层：阶段1主动资金 {yuan(deployment.get('stage_1_active_capital'))}；ETF核心目标 {yuan(deployment.get('stage_1_core_etf_target_value'))}；短线桶 {yuan(deployment.get('stage_1_short_term_bucket'))}；单日新开仓上限 {yuan(deployment.get('stage_1_max_new_buy_per_day'))}。<br>
+                外部活钱规则：{html.escape(str(deployment.get('external_cash_transfer_rule', '未设置')))}<br>
+                商铺本金规则：{html.escape(str(deployment.get('shop_principal_rule', '未设置')))}<br>
                 优先主线：{html.escape('、'.join(str(item) for item in tracks))}
             </div>
     """

@@ -1,16 +1,16 @@
 {
-  "snapshot_time": "2026-05-19 14:09:00",
-  "broker_snapshot_time": "2026-05-19 14:09:00",
-  "cash_snapshot_time": "2026-05-15 17:33:04",
-  "broker_available_cash": 141110.44,
-  "external_cash_total": 167901.48,
-  "total_capital": 473898.42,
-  "cash": 309011.92,
-  "securities_market_value": 164886.5,
+  "snapshot_time": "2026-05-20 22:00:53",
+  "broker_snapshot_time": "2026-05-20 22:00:53",
+  "cash_snapshot_time": "2026-05-20 22:03:10",
+  "broker_available_cash": 146953.49,
+  "external_cash_total": 168354.19,
+  "total_capital": 476255.78,
+  "cash": 315307.68,
+  "securities_market_value": 160948.1,
   "cash_accounts": [
     {
       "name": "证券账户可用资金",
-      "amount": 141110.44,
+      "amount": 146953.49,
       "liquidity": "T+0/T+1",
       "note": "券商普通交易账户可用资金"
     },
@@ -22,7 +22,7 @@
     },
     {
       "name": "微众银行活期Plus",
-      "amount": 113.61,
+      "amount": 113.64,
       "liquidity": "T+0",
       "note": "截图显示活期Plus余额"
     },
@@ -40,22 +40,22 @@
     },
     {
       "name": "支付宝灵活取用",
-      "amount": 6174.21,
+      "amount": 6145.03,
       "liquidity": "T+0/T+1",
       "note": "截图显示支付宝活期资产"
     },
     {
       "name": "支付宝进阶理财",
-      "amount": 756.74,
+      "amount": 722.66,
       "liquidity": "T+1/基金规则",
       "note": "易方达全球成长精选混合(QDII)A，按类现金/理财观察，不作为ETF交易现金立即动用"
     }
   ],
-  "deployable_cash": 302080.97,
-  "reserve_cash": 6930.95,
+  "deployable_cash": 308439.99,
+  "reserve_cash": 6867.69,
   "cash_policy_note": "cash includes broker available funds plus external cash/cash-like accounts from user screenshots; deployable_cash excludes Alipay reserve/cash-like fund bucket until transferred or redeemed.",
-  "reference_profit": 3253.28,
-  "daily_profit": -794.1,
+  "reference_profit": 5157.93,
+  "daily_profit": 0,
   "max_single_weight": 0.25,
   "default_buy_amount": 10000,
   "positions": [
@@ -180,9 +180,9 @@
     }
   ],
   "capital_plan": {
-    "updated_at": "2026-05-18",
+    "updated_at": "2026-05-20",
     "objective": "用ETF核心仓 + 短线个股卫星仓，在强行情中冲刺全年30%收益目标；目标用于规划，不用于反推重仓。",
-    "current_trading_capital": 473903.52,
+    "current_trading_capital": 476255.78,
     "off_platform_assets": [
       {
         "name": "家庭商铺投资本金",
@@ -200,36 +200,36 @@
       "projected_new_money": 70000
     },
     "year_end_2026_projection": {
-      "base_before_market_profit": 564903.52,
-      "includes_current_trading_capital": 473903.52,
+      "base_before_market_profit": 567255.78,
+      "includes_current_trading_capital": 476255.78,
       "includes_new_money": 70000,
       "includes_shop_cashflow": 21000,
       "strong_market_target_return": 0.3,
-      "strong_market_target_profit_on_current_trading_capital": 142171.06,
-      "strong_market_target_capital": 707074.58,
+      "strong_market_target_profit_on_current_trading_capital": 142876.73,
+      "strong_market_target_capital": 710132.51,
       "note": "30%是强行情冲刺目标，不是承诺收益；若趋势不确认，优先保留现金和仓位纪律。"
     },
     "if_shop_principal_returns_2027": {
-      "projected_investable_base_before_2026_market_profit": 1264903.52,
+      "projected_investable_base_before_2026_market_profit": 1267255.78,
       "target_return_ladder": [
         {
           "return_rate": 0.1,
-          "profit": 126490.35,
+          "profit": 126725.58,
           "meaning": "超过商铺固定现金流，属于稳健改善"
         },
         {
           "return_rate": 0.15,
-          "profit": 189735.53,
+          "profit": 190088.37,
           "meaning": "较好的主动投资目标"
         },
         {
           "return_rate": 0.2,
-          "profit": 252980.7,
+          "profit": 253451.16,
           "meaning": "进攻但仍需纪律控制"
         },
         {
           "return_rate": 0.3,
-          "profit": 379471.06,
+          "profit": 380176.73,
           "meaning": "强行情目标，需要主线确认和较高波动承受"
         }
       ]
@@ -343,6 +343,33 @@
         "涨3%先记录是否达到预期，涨5%可考虑分批落袋。",
         "亏损接近3%必须承认试错失败，不补仓摊低。",
         "错过第一波不是错误，追高才是错误。"
+      ]
+    },
+    "liquidity_deployment_plan": {
+      "updated_at": "2026-05-20",
+      "objective": "把闲置现金分层接入A股系统，而不是为了日入3000一次性放大风险。",
+      "broker_account_total": 307901.59,
+      "broker_stock_market_value": 160948.1,
+      "broker_available_cash": 146953.49,
+      "external_cash_total": 168354.19,
+      "deployable_cash": 308439.99,
+      "reserve_cash_floor": 100000,
+      "stage_1_active_capital": 260000,
+      "stage_1_core_etf_target_value": 160000,
+      "stage_1_short_term_bucket": 100000,
+      "stage_1_max_new_buy_per_day": 60000,
+      "stage_2_short_term_bucket": 150000,
+      "stage_2_trigger": "连续20个交易日净收益为正，且最大回撤不超过15000元。",
+      "stage_3_short_term_bucket": 200000,
+      "stage_3_trigger": "连续2个月净盈利，且没有单日新开仓后亏损超过2000元。",
+      "external_cash_transfer_rule": "外部活钱不默认全转入证券账户；只有阶段条件达成后，按5万-10万元分批转入。",
+      "shop_principal_rule": "70万元商铺本金仍作为场外现金流资产；A股系统连续3个月跑赢商铺现金流且回撤可控前，不纳入交易本金。",
+      "daily_profit_rule": "3000元是强信号日参考目标，不是每日任务；没有A/B级信号时现金继续闲置。",
+      "risk_rules": [
+        "证券账户可用资金先分成10万元短线桶、4万-6万元ETF补仓弹药、剩余作为等待资金。",
+        "单日新开仓不超过6万元，除非已有浮盈保护且出现A+主线共振。",
+        "短线桶亏损达到1200元软熔断，达到2000元硬熔断。",
+        "任何一笔交易必须先满足主线、量价、承接、不过热、最小一手成本五个过滤。"
       ]
     }
   },

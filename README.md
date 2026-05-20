@@ -99,6 +99,30 @@ A级强确认单只上限：30,000
 
 这只是强行情日的进攻桶，不是每天必须交易、也不是自动下单。
 
+## Liquidity Deployment
+
+2026-05-20 OCR snapshot has been folded into `portfolio.json`.
+
+```text
+Broker account total: 307,901.59
+Broker stock market value: 160,948.10
+Broker available cash: 146,953.49
+External cash-like funds: 168,354.19
+Current total monitored capital: 476,255.78
+```
+
+Execution stance:
+
+```text
+Stage 1 active capital: 260,000
+ETF/core target inside Stage 1: 160,000
+Short-term stock bucket: 100,000
+Maximum new buying in one day: 60,000
+No-touch cash floor: 100,000
+```
+
+External cash is not automatically moved into the broker account. It is staged in only after the system proves itself with positive net results and controlled drawdown.
+
 ## AI Digital Infrastructure
 
 桌面四个录屏里的核心判断已经整理成“AI 数字基础建设”产业链雷达：

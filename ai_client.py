@@ -132,6 +132,7 @@ def generate_ai_summary(report: Dict) -> str:
         "daily_loss_hard_stop": pilot.get("daily_loss_hard_stop"),
         "no_chase_pct": pilot.get("no_chase_pct"),
     }
+    deployment_policy = (portfolio.get("capital_plan") or {}).get("liquidity_deployment_plan") or {}
 
     prompt = f"""
 请基于下面 ETF 雷达和 AI 产业链个股雷达结果，给出中文策略简报。
@@ -155,6 +156,9 @@ def generate_ai_summary(report: Dict) -> str:
 
 当前短线仓位规则：
 {json.dumps(short_term_policy, ensure_ascii=False, indent=2)}
+
+当前现金分层接入规则：
+{json.dumps(deployment_policy, ensure_ascii=False, indent=2)}
 
 账户：
 {json.dumps(portfolio, ensure_ascii=False, indent=2)}

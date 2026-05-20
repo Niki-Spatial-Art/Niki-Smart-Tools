@@ -6,34 +6,64 @@ It is a planning document, not a promise of return and not a reason to increase 
 
 ## Current Capital Picture
 
-Snapshot date: 2026-05-18
+Snapshot date: 2026-05-20 22:00
 
 | Bucket | Amount | Role |
 | --- | ---: | --- |
-| Trading account and cash-like funds | 473,903.52 | Current investable base for ETF core and short-term stock satellite radar |
+| Trading account and cash-like funds | 476,255.78 | Current investable base for ETF core and short-term stock satellite radar |
+| Broker account total | 307,901.59 | Securities account after the 2026-05-20 OCR snapshot |
+| Broker stock market value | 160,948.10 | Current ETF/stock market value |
+| Broker available cash | 146,953.49 | Immediately available trading cash |
+| External cash-like funds | 168,354.19 | WeBank, Alipay, ICBC, WeChat and other liquid balances |
 | Family shop investment principal | 700,000.00 | Off-platform fixed cashflow asset, not counted as trading cash in 2026 |
 | Shop monthly cashflow | 3,000.00 | About 5.14% implied annual yield on 700,000 |
 | Planned monthly new money | 10,000.00 | Added to trading capital from 2026-06 through 2026-12 |
+
+## 2026-05-20 Liquidity Deployment Plan
+
+The account is cash-heavy, but cash should be staged into the system instead of moved into short-term trades all at once.
+
+```text
+Stage 1 active capital: 260,000
+Existing stock/ETF market value: about 160,948
+Short-term stock bucket: 100,000
+Single B-grade stock: 20,000
+Single A-grade stock: up to 30,000
+Maximum new buying in one day: 60,000
+Emergency / no-touch cash floor: 100,000
+```
+
+Deployment rules:
+
+```text
+1. Broker available cash is the first source for ETF core rebalancing and short-term stock probes.
+2. External cash is not automatically transferred into the broker account.
+3. Add external cash only after the system proves itself: net positive for 20 trading days and drawdown below 15,000.
+4. If Stage 1 works, the short-term bucket can rise from 100,000 to 150,000.
+5. If two consecutive months are net profitable and no new-trade day loses more than 2,000, the bucket can rise to 200,000.
+6. The 700,000 shop principal remains outside unless the A-share system beats shop cashflow for three consecutive months with controlled drawdown.
+7. Daily 3,000 is a strong-signal-day reference target, not a daily income requirement.
+```
 
 ## 2026 Year-End Projection
 
 Assumptions:
 
 ```text
-Current trading capital: 473,903.52
+Current trading capital: 476,255.78
 Monthly new money: 10,000 x 7 = 70,000
 Shop cashflow: 3,000 x 7 = 21,000
-Base year-end capital before market profit: 564,903.52
+Base year-end capital before market profit: 567,255.78
 ```
 
 Return ladder for the 2026 trading capital:
 
 | Market case | Return on current trading capital | Market profit | Year-end capital including new money and shop cashflow |
 | --- | ---: | ---: | ---: |
-| Defensive / repair year | 8% | 37,912.28 | 602,815.80 |
-| Base active target | 15% | 71,085.53 | 635,989.05 |
-| Strong but controlled | 20% | 94,780.70 | 659,684.22 |
-| Strong-market sprint | 30% | 142,171.06 | 707,074.58 |
+| Defensive / repair year | 8% | 38,100.46 | 605,356.24 |
+| Base active target | 15% | 71,438.37 | 638,694.15 |
+| Strong but controlled | 20% | 95,251.16 | 662,506.94 |
+| Strong-market sprint | 30% | 142,876.73 | 710,132.51 |
 
 This target is aggressive. It can only be pursued when market evidence supports it:
 
@@ -50,17 +80,17 @@ This target is aggressive. It can only be pursued when market evidence supports 
 If the 700,000 shop principal returns in 2027, the projected investable base before 2026 market profit is:
 
 ```text
-564,903.52 + 700,000 = 1,264,903.52
+567,255.78 + 700,000 = 1,267,255.78
 ```
 
 Return ladder:
 
 | Return | Profit | Meaning |
 | ---: | ---: | --- |
-| 10% | 126,490.35 | Better than current shop cashflow, relatively steady improvement |
-| 15% | 189,735.53 | Good active-investing target |
-| 20% | 252,980.70 | Offensive target with discipline |
-| 30% | 379,471.06 | Strong-market target, requires trend confirmation and higher volatility tolerance |
+| 10% | 126,725.58 | Better than current shop cashflow, relatively steady improvement |
+| 15% | 190,088.37 | Good active-investing target |
+| 20% | 253,451.16 | Offensive target with discipline |
+| 30% | 380,176.73 | Strong-market target, requires trend confirmation and higher volatility tolerance |
 
 ## Allocation Policy
 
