@@ -333,7 +333,8 @@ def fetch_market_snapshot_page(page: int, page_size: int = 100) -> List[Dict]:
             "fields": "f12,f14,f2,f3,f6,f8,f10,f17,f18,f100",
             "ut": "fa5fd1943c7b386f172d6893dbfba10b",
         },
-        timeout=10,
+        timeout=int(os.getenv("BROAD_MARKET_PAGE_TIMEOUT_SECONDS", "4")),
+        retries=int(os.getenv("BROAD_MARKET_PAGE_RETRIES", "1")),
     ).get("data") or {}
     return data.get("diff") or []
 
@@ -435,13 +436,19 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
 
     max_pages = int(os.getenv("BROAD_MARKET_MAX_PAGES", "28"))
     page_size = int(os.getenv("BROAD_MARKET_PAGE_SIZE", "200"))
+    time_budget = float(os.getenv("BROAD_MARKET_TIME_BUDGET_SECONDS", "110"))
     layer_index = layer_index_from_watchlist(watchlist)
     candidates = []
     failures = []
     seen_codes = set()
     total_rows_seen = 0
+    started_at = time.monotonic()
 
     for page in range(1, max_pages + 1):
+        elapsed = time.monotonic() - started_at
+        if elapsed >= time_budget:
+            failures.append({"page": page, "error": f"broad market scan time budget reached after {elapsed:.1f}s"})
+            break
         try:
             rows = fetch_market_snapshot_page(page, page_size)
             if not rows:
@@ -1107,6 +1114,14 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
     window_text = "；".join(
         f"{item.get('time')} {item.get('action')}" for item in windows if item.get("time")
     )
+    bucket_text = ""
+    if pilot.get("estimated_bucket_profit_if_3pct") is not None:
+        bucket_text = (
+            f"- 短线桶测算：若 {yuan(pilot.get('max_total_capital'))} 满仓整体涨3%约 "
+            f"{yuan(pilot.get('estimated_bucket_profit_if_3pct'))}；涨5%约 "
+            f"{yuan(pilot.get('estimated_bucket_profit_if_5pct'))}；亏3%约 "
+            f"{yuan(pilot.get('estimated_bucket_loss_if_minus_3pct'))}"
+        )
     return [
         "",
         "## 短线试运行",
@@ -1115,6 +1130,7 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
         f"- 资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
         f"- 候选：{candidate_text}",
         f"- 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}",
+        bucket_text,
         f"- 时间：{window_text}",
         "- 硬规则：9:10只看预案，9:40以后才允许小仓试单；错过第一波不是错误，追高才是错误。",
     ]
@@ -1172,6 +1188,14 @@ def short_term_pilot_html(portfolio: Dict) -> str:
     )
     hard_rules = pilot.get("hard_rules") or []
     hard_rule_html = "<br>".join(html.escape(str(rule)) for rule in hard_rules)
+    bucket_html = ""
+    if pilot.get("estimated_bucket_profit_if_3pct") is not None:
+        bucket_html = (
+            f"短线桶测算：若 {yuan(pilot.get('max_total_capital'))} 满仓整体涨3%约 "
+            f"{yuan(pilot.get('estimated_bucket_profit_if_3pct'))}；涨5%约 "
+            f"{yuan(pilot.get('estimated_bucket_profit_if_5pct'))}；亏3%约 "
+            f"{yuan(pilot.get('estimated_bucket_loss_if_minus_3pct'))}。<br>"
+        )
 
     return f"""
             <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
@@ -1179,6 +1203,7 @@ def short_term_pilot_html(portfolio: Dict) -> str:
                 目标：{html.escape(str(pilot.get('goal', '先练执行，不追求大额盈利。')))}<br>
                 资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
                 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}。<br>
+                {bucket_html}
                 <strong>候选</strong><br>{candidate_html}<br>
                 <strong>时间窗口</strong><br>{window_html}<br>
                 <strong>硬规则</strong><br>{hard_rule_html}
