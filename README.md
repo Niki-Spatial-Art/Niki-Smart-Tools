@@ -80,6 +80,25 @@ ETF_QDII_CODES=513310,159696,513180
 
 机器可读的关键参数也写入了 [portfolio.json](portfolio.json) 的 `capital_plan` 字段，每日 AI 简报会一起读取。
 
+## Short-Term Stock Expansion
+
+个股卫星仓扩容规则见：
+
+[SHORT_TERM_STOCK_EXPANSION_PLAN.md](SHORT_TERM_STOCK_EXPANSION_PLAN.md)
+
+当前执行口径：
+
+```text
+B级单只上限：20,000
+A级强确认单只上限：30,000
+短线个股桶上限：100,000
+日目标参考：3,000
+软熔断：-1,200
+硬熔断：-2,000
+```
+
+这只是强行情日的进攻桶，不是每天必须交易、也不是自动下单。
+
 ## AI Digital Infrastructure
 
 桌面四个录屏里的核心判断已经整理成“AI 数字基础建设”产业链雷达：

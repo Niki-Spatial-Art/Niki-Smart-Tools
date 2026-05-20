@@ -192,6 +192,22 @@ Phase 3, 2026-09: decide whether the system has enough evidence to increase capi
 Phase 4, after permissions and API access are ready: connect broker data/export, but still keep human confirmation before orders.
 ```
 
+2026-05-20 override:
+
+The first 8,000-per-stock pilot was a familiarity test. After the first test trade and the broader market scanner upgrade, the active short-term stock bucket is now governed by `SHORT_TERM_STOCK_EXPANSION_PLAN.md` and `portfolio.json`.
+
+```text
+Default single stock: 20,000
+A-grade confirmed stock: up to 30,000
+Maximum simultaneous short-term stocks: 4
+Maximum short-term stock bucket: 100,000
+Daily profit reference target: 3,000
+Soft stop: -1,200
+Hard stop: -2,000
+```
+
+This override does not mean forced buying. It only means the system is allowed to use a larger bucket on A-grade or B-grade days. If no qualified action pool appears, the correct action is still no trade.
+
 ## 2026-05-19 Short-Term Pilot
 
 This is a familiarity test, not a profit target.
@@ -247,7 +263,7 @@ Basic filters: liquidity, tradability, risk flags, intraday strength
 Strength board: top 50, used to understand market style
 Watch pool: top 10, used for the next 09:40 decision window
 Action pool: 1-3 stocks, only eligible for small pilot orders after confirmation
-Actual buy: 0-1 new stock per day
+Actual buy: 0-3 new stocks per day, depending on A/B grade and risk gate
 ```
 
 Position discipline:
@@ -255,10 +271,11 @@ Position discipline:
 ```text
 1. ETF core remains the main engine.
 2. Short-term stocks are only return enhancers, not the main engine.
-3. Hold at most 3 short-term individual stocks at the same time.
-4. First order stays at 5,000-10,000 unless the system has 20+ reviewed trades.
+3. Hold at most 4 short-term individual stocks at the same time.
+4. B-grade single-stock upper limit is 20,000; A-grade strong confirmation upper limit is 30,000.
 5. If the action pool is empty, the correct action is no trade.
 6. A green action candidate still requires 09:40 volume, layer strength, and order-book confirmation.
+7. Daily 3,000 is a strong-market reference target, not a reason to add risk after a weak signal.
 ```
 
 Action-pool filters:
