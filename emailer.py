@@ -1,5 +1,6 @@
 """邮件发送模块"""
 import smtplib
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
@@ -25,6 +26,38 @@ class EmailNotifier:
         self.sender_password = sender_password
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
+
+    def _send_message_with_retries(self, msg: MIMEMultipart, attempts: int = 3) -> bool:
+        ports = [self.smtp_port]
+        fallback_port = 465 if self.smtp_port != 465 else 587
+        ports.append(fallback_port)
+
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            for port in ports:
+                try:
+                    if port == 465:
+                        with smtplib.SMTP_SSL(self.smtp_server, port, timeout=30) as server:
+                            server.login(self.sender_email, self.sender_password)
+                            server.send_message(msg)
+                    else:
+                        with smtplib.SMTP(self.smtp_server, port, timeout=30) as server:
+                            server.ehlo()
+                            server.starttls()
+                            server.ehlo()
+                            server.login(self.sender_email, self.sender_password)
+                            server.send_message(msg)
+                    return True
+                except smtplib.SMTPAuthenticationError:
+                    raise
+                except (smtplib.SMTPException, OSError) as exc:
+                    last_error = exc
+                    logger.warning("SMTP send attempt %s via port %s failed: %s", attempt, port, exc)
+            time.sleep(2 * attempt)
+
+        if last_error:
+            raise last_error
+        return False
     
     def send_alert(self, recipient_email: str, subject: str, message: str) -> bool:
         """
@@ -65,11 +98,7 @@ class EmailNotifier:
             msg.attach(text_part)
             msg.attach(html_part)
             
-            # 发送邮件
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()  # 启用TLS加密
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
+            self._send_message_with_retries(msg)
             
             logger.info(f"邮件已成功发送到 {recipient_email}")
             return True
@@ -104,11 +133,7 @@ class EmailNotifier:
             html_part = MIMEText(html_content, "html", "utf-8")
             msg.attach(html_part)
             
-            # 发送邮件
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()  # 启用TLS加密
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
+            self._send_message_with_retries(msg)
             
             logger.info(f"✅ HTML 邮件已成功发送到 {recipient_email}")
             return True
