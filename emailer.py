@@ -1,6 +1,7 @@
 """邮件发送模块"""
 import smtplib
 import time
+from email.utils import formatdate, make_msgid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
@@ -47,6 +48,7 @@ class EmailNotifier:
                             server.ehlo()
                             server.login(self.sender_email, self.sender_password)
                             server.send_message(msg)
+                    logger.info("SMTP email accepted by %s:%s", self.smtp_server, port)
                     return True
                 except smtplib.SMTPAuthenticationError:
                     raise
@@ -74,6 +76,8 @@ class EmailNotifier:
             msg["Subject"] = subject
             msg["From"] = self.sender_email
             msg["To"] = recipient_email
+            msg["Date"] = formatdate(localtime=True)
+            msg["Message-ID"] = make_msgid(domain=self.sender_email.split("@")[-1])
             
             # 构建HTML内容
             html_content = f"""
@@ -128,9 +132,16 @@ class EmailNotifier:
             msg["Subject"] = subject
             msg["From"] = self.sender_email
             msg["To"] = recipient_email
-            
-            # 添加 HTML 版本
+            msg["Date"] = formatdate(localtime=True)
+            msg["Message-ID"] = make_msgid(domain=self.sender_email.split("@")[-1])
+
+            text_part = MIMEText(
+                "ETF Strategy Monitor report. 本邮件包含HTML格式策略报告；如果正文显示异常，请查看同一封邮件的HTML版本或GitHub Actions日志。",
+                "plain",
+                "utf-8",
+            )
             html_part = MIMEText(html_content, "html", "utf-8")
+            msg.attach(text_part)
             msg.attach(html_part)
             
             self._send_message_with_retries(msg)

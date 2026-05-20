@@ -763,10 +763,11 @@ def display_broad_market_results(results: List[Dict]) -> List[Dict]:
     return results[:max_rows]
 
 
-def broad_market_tiers(results: List[Dict]) -> Dict[str, List[Dict]]:
+def broad_market_tiers(results: List[Dict], portfolio: Optional[Dict] = None) -> Dict[str, List[Dict]]:
     strength_rows = int(os.getenv("BROAD_MARKET_STRENGTH_ROWS", "50"))
     watch_rows = int(os.getenv("BROAD_MARKET_WATCH_ROWS", "10"))
-    action_rows = int(os.getenv("BROAD_MARKET_ACTION_ROWS", "3"))
+    pilot = short_term_pilot_policy(portfolio or {})
+    action_rows = int(pilot.get("max_stocks") or os.getenv("BROAD_MARKET_ACTION_ROWS", "3"))
     action_min_amount = float(os.getenv("BROAD_MARKET_ACTION_MIN_AMOUNT", "500000000"))
     action_min_pct = float(os.getenv("BROAD_MARKET_ACTION_MIN_PCT", "1.8"))
     action_max_pct = float(os.getenv("BROAD_MARKET_ACTION_MAX_PCT", "5.2"))
@@ -792,14 +793,21 @@ def broad_market_tiers(results: List[Dict]) -> Dict[str, List[Dict]]:
         if turnover < action_min_turnover or turnover > action_max_turnover:
             continue
         action_item = dict(item)
-        action_item["action"] = "可操作候选，限9:40二次确认后小仓"
+        if item.get("theme_layers"):
+            action_item["action"] = "主线可操作候选，限9:40二次确认后小仓"
+            reason_prefix = "通过主线短线过滤：命中主题层，且涨幅不过热、成交额够、量比放大、换手未失控"
+        else:
+            action_item["action"] = "全市场异动备选，需降级观察"
+            reason_prefix = "通过全市场量价过滤，但未命中当前AI/数字基建主线；只能作为备选，不优先下单"
         action_item["reasons"] = [
-            "通过短线可操作池过滤：涨幅不过热、成交额够、量比放大、换手未失控",
+            reason_prefix,
             *item.get("reasons", []),
         ]
         actionable.append(action_item)
-        if len(actionable) >= action_rows:
-            break
+
+    theme_actionable = [item for item in actionable if item.get("theme_layers")]
+    fallback_actionable = [item for item in actionable if not item.get("theme_layers")]
+    actionable = (theme_actionable + fallback_actionable)[:action_rows]
 
     return {
         "strength": results[:strength_rows],
@@ -810,6 +818,19 @@ def broad_market_tiers(results: List[Dict]) -> Dict[str, List[Dict]]:
 
 def short_term_pilot_policy(portfolio: Dict) -> Dict:
     return (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
+
+
+def short_term_policy_sentence(portfolio: Dict) -> str:
+    pilot = short_term_pilot_policy(portfolio)
+    if not pilot:
+        return "短线试运行未启用；只做观察，不开新仓。"
+    return (
+        f"可操作池最多{pilot.get('max_stocks', 3)}只；"
+        f"B级单只默认{yuan(pilot.get('capital_per_stock'))}；"
+        f"A级强确认最多{yuan(pilot.get('strong_signal_capital_per_stock'))}；"
+        f"短线总额不超过{yuan(pilot.get('max_total_capital'))}；"
+        f"日目标{yuan(pilot.get('daily_profit_target'))}只是测算目标，不用于倒逼交易。"
+    )
 
 
 def daily_risk_gate(portfolio: Dict, pilot: Dict) -> Dict:
@@ -1375,7 +1396,8 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
     broad_scan = report.get("broad_market_scan", {})
     broad_results = broad_scan.get("results", [])
     if broad_scan.get("enabled") and broad_results:
-        tiers = broad_market_tiers(broad_results)
+        tiers = broad_market_tiers(broad_results, portfolio)
+        short_term_policy = short_term_policy_sentence(portfolio)
         lines.extend(
             [
                 "",
@@ -1383,8 +1405,8 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 "",
                 f"- 扫描A股数量：{broad_scan.get('scanned_count', 0)}；过滤后候选：{broad_scan.get('candidate_count', len(broad_results))}。",
                 "- 默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；创业板/科创可观察，但不作为当前下单候选。",
-                "- 结构：强度榜用于看风格；观察池用于明天盯盘；可操作池最多3只，仍需9:40二次确认。",
-                "- 纪律：可操作池最多买3只，单只默认1万元，强确认可到2万元；没有绿色执行条件就空手。",
+                f"- 结构：强度榜用于看风格；观察池用于明天盯盘；{short_term_policy}",
+                "- 纪律：优先主线可操作候选；全市场异动备选必须降级观察，没有9:40放量、板块强度和盘口承接就空手。",
                 "",
                 "### 全市场强度榜 Top 50",
                 "",
@@ -1440,7 +1462,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         lines.extend(
             [
                 "",
-                "### 今日可操作池 1-3只",
+                f"### 今日可操作池 1-{short_term_pilot_policy(portfolio).get('max_stocks', 3)}只",
                 "",
                 "- 仅代表具备短线试单条件；仍然必须等9:40放量、板块强度和盘口承接确认。",
                 "",
@@ -1602,7 +1624,9 @@ def generate_html_email(report: Dict) -> str:
         """
 
     broad_scan = report.get("broad_market_scan", {})
-    broad_tiers = broad_market_tiers(broad_scan.get("results", []))
+    portfolio = report.get("portfolio", {})
+    broad_tiers = broad_market_tiers(broad_scan.get("results", []), portfolio)
+    short_term_policy = short_term_policy_sentence(portfolio)
 
     def render_broad_table_rows(items: List[Dict]) -> str:
         rows = []
@@ -1646,7 +1670,8 @@ def generate_html_email(report: Dict) -> str:
         <h3>全市场短线雷达</h3>
         <div class="sub">
             扫描A股 {broad_scan.get('scanned_count', 0)} 只；过滤后候选 {broad_scan.get('candidate_count', len(broad_tiers["strength"]))} 只。
-            强度榜用于看风格，观察池用于明天盯盘，可操作池最多3只；单只默认1万元，强确认可到2万元。
+            强度榜用于看风格，观察池用于明天盯盘，{html.escape(short_term_policy)}
+            优先主线可操作候选；全市场异动备选必须降级观察。
         </div>
         <h4>全市场强度榜 Top 50</h4>
         <div class="sub">系统看的强弱排序，不等于买入。</div>
@@ -1680,7 +1705,7 @@ def generate_html_email(report: Dict) -> str:
             </tr>
             {render_broad_table_rows(broad_tiers["watch"])}
         </table>
-        <h4>今日可操作池 1-3只</h4>
+        <h4>今日可操作池 1-{html.escape(str(short_term_pilot_policy(portfolio).get('max_stocks', 3)))}只</h4>
         <div class="sub">仅代表具备短线试单条件；仍然必须等9:40放量、板块强度和盘口承接确认。</div>
         <table>
             <tr>

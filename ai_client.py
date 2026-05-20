@@ -119,6 +119,19 @@ def generate_ai_summary(report: Dict) -> str:
         )
 
     portfolio = report.get("portfolio", {})
+    pilot = (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
+    short_term_policy = {
+        "enabled": pilot.get("enabled"),
+        "stage": pilot.get("stage"),
+        "capital_per_stock": pilot.get("capital_per_stock"),
+        "strong_signal_capital_per_stock": pilot.get("strong_signal_capital_per_stock"),
+        "max_stocks": pilot.get("max_stocks"),
+        "max_total_capital": pilot.get("max_total_capital"),
+        "daily_profit_target": pilot.get("daily_profit_target"),
+        "daily_loss_soft_stop": pilot.get("daily_loss_soft_stop"),
+        "daily_loss_hard_stop": pilot.get("daily_loss_hard_stop"),
+        "no_chase_pct": pilot.get("no_chase_pct"),
+    }
 
     prompt = f"""
 请基于下面 ETF 雷达和 AI 产业链个股雷达结果，给出中文策略简报。
@@ -137,6 +150,11 @@ def generate_ai_summary(report: Dict) -> str:
 11. 对趋势仓检查入场规则、头寸规模、止损线和退出条件；不要因为单日突破或强势叙事临时扩大仓位。
 12. 个股部分只做卫星仓候选发现，重点寻找存算一体、存储、光模块、AI芯片、AI服务器中“层级共振 + 龙头确认 + 量价突破”的线索。
 13. 如果只有单只个股强、同层级不强，要提示这可能只是情绪或个股事件，不是主线确认。
+14. 短线仓位规则必须以“当前短线仓位规则”为准，不得沿用旧的1万元/2万元/最多3只/6万元口径；如果规则显示2万元/3万元/最多4只/10万元，就必须按新口径表达。
+15. “日目标”只作为测算和复盘压力测试，不允许写成保证收益，也不允许为了凑目标建议追高或补仓。
+
+当前短线仓位规则：
+{json.dumps(short_term_policy, ensure_ascii=False, indent=2)}
 
 账户：
 {json.dumps(portfolio, ensure_ascii=False, indent=2)}
