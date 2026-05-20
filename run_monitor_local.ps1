@@ -15,8 +15,11 @@ try {
     $python = (Get-Command python -ErrorAction Stop).Source
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Python: $python" | Out-File -FilePath $logFile -Encoding utf8 -Append
 
-    & $python monitor.py *>> $logFile
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $python monitor.py 1>> $logFile 2>> $logFile
     $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
 
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Python exit code: $exitCode" | Out-File -FilePath $logFile -Encoding utf8 -Append
     if ($exitCode -ne 0) {
