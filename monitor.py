@@ -808,6 +808,72 @@ def broad_market_tiers(results: List[Dict]) -> Dict[str, List[Dict]]:
     }
 
 
+def short_term_pilot_policy(portfolio: Dict) -> Dict:
+    return (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
+
+
+def daily_risk_gate(portfolio: Dict, pilot: Dict) -> Dict:
+    daily_profit = float(portfolio.get("daily_profit") or 0)
+    soft_stop = float(pilot.get("daily_loss_soft_stop") or -1200)
+    hard_stop = float(pilot.get("daily_loss_hard_stop") or -2000)
+    if daily_profit <= hard_stop:
+        return {
+            "blocked": True,
+            "level": "HARD_STOP",
+            "reason": f"当日盈亏 {daily_profit:.0f} 元已触发硬熔断 {hard_stop:.0f} 元，停止新开仓",
+        }
+    if daily_profit <= soft_stop:
+        return {
+            "blocked": False,
+            "level": "SOFT_STOP",
+            "reason": f"当日盈亏 {daily_profit:.0f} 元接近软熔断 {soft_stop:.0f} 元，只允许减仓或极小试错",
+        }
+    return {"blocked": False, "level": "OPEN", "reason": "当日风险闸门未触发"}
+
+
+def short_term_trade_plan(item: Dict, portfolio: Dict) -> Dict:
+    pilot = short_term_pilot_policy(portfolio)
+    if not pilot or not pilot.get("enabled"):
+        return {"tier": "观察", "capital": None, "reason": "短线试运行未启用"}
+
+    risk_gate = daily_risk_gate(portfolio, pilot)
+    pct = item.get("pct_change")
+    amount = item.get("amount") or 0
+    ma20 = item.get("ma20")
+    ma60 = item.get("ma60")
+    price = item.get("price")
+    level = item.get("level")
+
+    if risk_gate["blocked"]:
+        return {"tier": "禁止新开", "capital": 0, "reason": risk_gate["reason"]}
+    if level == "RED":
+        return {"tier": "禁止追买", "capital": 0, "reason": "红色信号，优先保护本金"}
+    if pct is None or price is None:
+        return {"tier": "观察", "capital": 0, "reason": "数据不足，不能放大仓位"}
+    if pct >= float(pilot.get("no_chase_pct", 5.2)):
+        return {"tier": "等回踩", "capital": 0, "reason": f"涨幅 {pct:.2f}% 已接近追高区，等二次确认"}
+    if pct <= float(pilot.get("avoid_weak_pct", -3.5)):
+        return {"tier": "观察承接", "capital": 0, "reason": f"跌幅 {pct:.2f}% 较大，先看承接不急买"}
+
+    trend_ok = bool(price and ma20 and ma60 and price > ma20 > ma60)
+    active_ok = amount >= float(pilot.get("min_action_amount", 500_000_000))
+    pct_ok = float(pilot.get("action_min_pct", 1.2)) <= pct <= float(pilot.get("action_max_pct", 5.2))
+
+    if trend_ok and active_ok and pct_ok and risk_gate["level"] == "OPEN":
+        return {
+            "tier": "A级试单",
+            "capital": pilot.get("strong_signal_capital_per_stock"),
+            "reason": "趋势、成交额和涨幅区间同时达标；仍需9:40/10:45二次确认",
+        }
+    if active_ok and pct_ok:
+        return {
+            "tier": "B级试单",
+            "capital": pilot.get("capital_per_stock"),
+            "reason": "量价进入可观察区，但趋势或风控条件未完全共振，只能默认仓",
+        }
+    return {"tier": "观察", "capital": 0, "reason": "未达到短线扩容条件"}
+
+
 def display_stock_results(results: List[Dict]) -> List[Dict]:
     max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "40"))
     focus_codes = list(focus_stock_codes())
@@ -985,6 +1051,8 @@ def run_radar() -> Dict:
             failures.append({"code": code, "error": str(exc)})
 
     stock_radar = run_stock_radar()
+    for item in stock_radar.get("results", []):
+        item["trade_plan"] = short_term_trade_plan(item, portfolio)
     broad_market_scan = run_broad_market_scan(load_digital_infra_watchlist())
 
     now = datetime.now(BEIJING_TZ)
@@ -1127,6 +1195,7 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
         "## 短线试运行",
         "",
         f"- 日期：{pilot.get('pilot_date', '未设置')}；阶段：{pilot.get('stage', '熟悉度测试')}",
+        f"- 日目标/风控：目标 {yuan(pilot.get('daily_profit_target'))}；软熔断 {yuan(pilot.get('daily_loss_soft_stop'))}；硬熔断 {yuan(pilot.get('daily_loss_hard_stop'))}",
         f"- 资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
         f"- 候选：{candidate_text}",
         f"- 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}",
@@ -1201,6 +1270,7 @@ def short_term_pilot_html(portfolio: Dict) -> str:
             <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
                 <strong>短线试运行：{html.escape(str(pilot.get('pilot_date', '未设置')))} {html.escape(str(pilot.get('stage', '熟悉度测试')))}</strong><br>
                 目标：{html.escape(str(pilot.get('goal', '先练执行，不追求大额盈利。')))}<br>
+                日目标/风控：目标 {yuan(pilot.get('daily_profit_target'))}；软熔断 {yuan(pilot.get('daily_loss_soft_stop'))}；硬熔断 {yuan(pilot.get('daily_loss_hard_stop'))}。<br>
                 资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
                 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}。<br>
                 {bucket_html}
@@ -1275,16 +1345,17 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 "## AI 产业链个股观察",
                 "",
                 f"- 个股扫描数量：{stock_radar.get('watch_count', 0)}",
-                "- 说明：个股只做卫星仓候选发现，默认初始单只不超过账户 2%-3%，不构成投资建议。",
+                "- 说明：个股只做卫星仓候选发现；A级/B级只是仓位纪律提示，不构成投资建议。",
                 "",
-                "| 代码 | 名称 | 层级 | 最新价 | 涨跌幅 | 20日线 | 60日线 | 信号 | 动作 | 原因 |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+                "| 代码 | 名称 | 层级 | 最新价 | 涨跌幅 | 20日线 | 60日线 | 信号 | 动作 | 短线档位 | 建议上限 | 原因 |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |",
             ]
         )
         for item in display_stock_results(stock_results):
             reasons = "；".join(item.get("reasons", []))
+            trade_plan = item.get("trade_plan") or {}
             lines.append(
-                "| {code} | {name} | {layer} | {price} | {pct} | {ma20} | {ma60} | {level} | {action} | {reasons} |".format(
+                "| {code} | {name} | {layer} | {price} | {pct} | {ma20} | {ma60} | {level} | {action} | {tier} | {capital} | {reasons}；{plan_reason} |".format(
                     code=markdown_escape(item.get("code")),
                     name=markdown_escape(item.get("name")),
                     layer=markdown_escape(item.get("layer_name")),
@@ -1294,7 +1365,10 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                     ma60=fmt(item.get("ma60")),
                     level=label_for(item.get("level", "")),
                     action=markdown_escape(item.get("action")),
+                    tier=markdown_escape(trade_plan.get("tier", "观察")),
+                    capital=yuan(trade_plan.get("capital")),
                     reasons=markdown_escape(reasons),
+                    plan_reason=markdown_escape(trade_plan.get("reason", "")),
                 )
             )
 
@@ -1486,6 +1560,7 @@ def generate_html_email(report: Dict) -> str:
     stock_radar = report.get("stock_radar", {})
     for item in display_stock_results(stock_radar.get("results", [])):
         reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
+        trade_plan = item.get("trade_plan") or {}
         level_color = color_for(item["level"])
         stock_rows.append(
             f"""
@@ -1497,6 +1572,7 @@ def generate_html_email(report: Dict) -> str:
                 <td>{fmt(item['ma20'])}</td>
                 <td>{fmt(item['ma60'])}</td>
                 <td><span style="color:{level_color}; font-weight:bold;">{label_for(item['level'])}</span><br>{html.escape(item['action'])}</td>
+                <td><strong>{html.escape(str(trade_plan.get('tier', '观察')))}</strong><br>上限：{yuan(trade_plan.get('capital'))}<br>{html.escape(str(trade_plan.get('reason', '')))}</td>
                 <td>{reasons}</td>
             </tr>
             """
@@ -1518,6 +1594,7 @@ def generate_html_email(report: Dict) -> str:
                 <th>20日线</th>
                 <th>60日线</th>
                 <th>信号</th>
+                <th>短线档位</th>
                 <th>原因</th>
             </tr>
             {''.join(stock_rows)}

@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+$env:PYTHONIOENCODING = "utf-8"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $projectRoot
