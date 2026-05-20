@@ -1127,7 +1127,7 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
         "## 短线试运行",
         "",
         f"- 日期：{pilot.get('pilot_date', '未设置')}；阶段：{pilot.get('stage', '熟悉度测试')}",
-        f"- 资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
+        f"- 资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
         f"- 候选：{candidate_text}",
         f"- 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}",
         bucket_text,
@@ -1201,7 +1201,7 @@ def short_term_pilot_html(portfolio: Dict) -> str:
             <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
                 <strong>短线试运行：{html.escape(str(pilot.get('pilot_date', '未设置')))} {html.escape(str(pilot.get('stage', '熟悉度测试')))}</strong><br>
                 目标：{html.escape(str(pilot.get('goal', '先练执行，不追求大额盈利。')))}<br>
-                资金：单只 {yuan(pilot.get('capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
+                资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
                 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}。<br>
                 {bucket_html}
                 <strong>候选</strong><br>{candidate_html}<br>
@@ -1310,7 +1310,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 f"- 扫描A股数量：{broad_scan.get('scanned_count', 0)}；过滤后候选：{broad_scan.get('candidate_count', len(broad_results))}。",
                 "- 默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；创业板/科创可观察，但不作为当前下单候选。",
                 "- 结构：强度榜用于看风格；观察池用于明天盯盘；可操作池最多3只，仍需9:40二次确认。",
-                "- 纪律：每天最多新买1只，同时最多持有3只短线个股；没有绿色执行条件就空手。",
+                "- 纪律：可操作池最多买3只，单只默认1万元，强确认可到2万元；没有绿色执行条件就空手。",
                 "",
                 "### 全市场强度榜 Top 50",
                 "",
@@ -1569,7 +1569,7 @@ def generate_html_email(report: Dict) -> str:
         <h3>全市场短线雷达</h3>
         <div class="sub">
             扫描A股 {broad_scan.get('scanned_count', 0)} 只；过滤后候选 {broad_scan.get('candidate_count', len(broad_tiers["strength"]))} 只。
-            强度榜用于看风格，观察池用于明天盯盘，可操作池最多3只；每天最多新买1只。
+            强度榜用于看风格，观察池用于明天盯盘，可操作池最多3只；单只默认1万元，强确认可到2万元。
         </div>
         <h4>全市场强度榜 Top 50</h4>
         <div class="sub">系统看的强弱排序，不等于买入。</div>

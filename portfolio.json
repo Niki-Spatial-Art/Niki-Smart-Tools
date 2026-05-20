@@ -277,19 +277,20 @@
       "stage": "熟悉度测试第1天",
       "goal": "先练执行，不追求大额盈利；用小仓验证短线雷达、盘中节奏和止损纪律。",
       "capital_per_stock": 10000,
+      "strong_signal_capital_per_stock": 20000,
       "max_stocks": 3,
-      "max_total_capital": 100000,
+      "max_total_capital": 60000,
       "pilot_capital_min": 50000,
       "pilot_capital_max": 100000,
-      "daily_new_buy_limit": 1,
+      "daily_new_buy_limit": 3,
       "target_profit_pct": 0.03,
       "stop_loss_pct": 0.03,
       "estimated_profit_if_3pct": 300,
       "estimated_profit_if_5pct": 500,
       "estimated_loss_if_minus_3pct": -300,
-      "estimated_bucket_profit_if_3pct": 3000,
-      "estimated_bucket_profit_if_5pct": 5000,
-      "estimated_bucket_loss_if_minus_3pct": -3000,
+      "estimated_bucket_profit_if_3pct": 1800,
+      "estimated_bucket_profit_if_5pct": 3000,
+      "estimated_bucket_loss_if_minus_3pct": -1800,
       "candidate_codes": [
         {
           "code": "600498",
@@ -313,7 +314,7 @@
         },
         {
           "time": "09:40",
-          "action": "第一次决策窗口；只看是否放量确认，最多选1只，不追高。"
+          "action": "第一次决策窗口；最多从可操作池选3只，每只1万元，只有强确认才允许单只提高到2万元，不追高。"
         },
         {
           "time": "10:45",
@@ -325,8 +326,9 @@
         }
       ],
       "hard_rules": [
-        "单只只用8000元，明天不临时加到更大仓位。",
-        "最多两只，总试运行仓位不超过16000元。",
+        "单只默认10000元，强确认才允许提高到20000元。",
+        "最多三只，总试运行仓位不超过60000元。",
+        "三只不是必须买满；只买满足9:40二次确认的标的。",
         "涨3%先记录是否达到预期，涨5%可考虑分批落袋。",
         "亏损接近3%必须承认试错失败，不补仓摊低。",
         "错过第一波不是错误，追高才是错误。"
