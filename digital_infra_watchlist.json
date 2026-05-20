@@ -168,6 +168,25 @@
       ]
     },
     {
+      "id": "copper_foil_high_speed_materials",
+      "name": "铜箔、覆铜板、高速材料",
+      "logic": "AI服务器、交换机和高速互连提升后，会继续传导到高频高速覆铜板、PCB铜箔、电子铜箔和散热导电材料。该层用于观察光模块/CPO行情是否向上游材料扩散；只看订单、涨价、成交额和同层级共振，不追单日脉冲。",
+      "codes": [
+        "600183",
+        "002463",
+        "002916",
+        "300476",
+        "603228",
+        "301217",
+        "688388",
+        "600110",
+        "301150",
+        "301511",
+        "002992",
+        "688550"
+      ]
+    },
+    {
       "id": "memory_hbm_ssd",
       "name": "存储、HBM、企业级SSD",
       "logic": "AI训练和推理需要更高带宽、更大容量、更快SSD，存储是GPU之后的重要瓶颈。",
@@ -248,6 +267,25 @@
         "002371",
         "688072",
         "688120"
+      ]
+    },
+    {
+      "id": "hubei_optical_storage_valley",
+      "name": "湖北光谷、光模块、存储、材料",
+      "logic": "湖北光谷链条同时覆盖光通信、光模块、存储材料、激光装备和通信设备，是观察区域产业集群共振的短线雷达。该层只用于发现湖北区域资金是否形成板块联动；不能因为地域叙事追高，必须有光模块/存储/材料同向确认。",
+      "codes": [
+        "000988",
+        "600498",
+        "300054",
+        "002281",
+        "301205",
+        "300516",
+        "300323",
+        "688143",
+        "688667",
+        "688038",
+        "688156",
+        "300557"
       ]
     },
     {
@@ -420,9 +458,11 @@
     "optical_cpo",
     "photonic_compute_interconnect",
     "network_switching_communication",
+    "hubei_optical_storage_valley",
     "ai_chips",
     "edge_ai_terminal_chips",
     "memory_hbm_ssd",
+    "copper_foil_high_speed_materials",
     "oled_8p6_flat_panel_equipment",
     "ai_servers",
     "foundry_advanced_manufacturing",

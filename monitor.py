@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from math import log10
 from statistics import mean
 from typing import Dict, List, Optional
 
@@ -305,6 +306,168 @@ def fetch_realtime_quote(code: str) -> Quote:
     )
 
 
+def market_scan_allowed_prefixes() -> tuple:
+    raw = os.getenv("BROAD_MARKET_ALLOWED_PREFIXES", "000,001,002,600,601,603,605")
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def is_tradeable_main_board_code(code: str, name: str) -> bool:
+    if not code.startswith(market_scan_allowed_prefixes()):
+        return False
+    blocked_name_tokens = ("ST", "*ST", "退", "N", "C")
+    return not any(token in name for token in blocked_name_tokens)
+
+
+def fetch_market_snapshot_page(page: int, page_size: int = 100) -> List[Dict]:
+    data = eastmoney_get(
+        "https://push2.eastmoney.com/api/qt/clist/get",
+        {
+            "pn": page,
+            "pz": page_size,
+            "po": "1",
+            "np": "1",
+            "fltt": "2",
+            "invt": "2",
+            "fid": "f6",
+            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+            "fields": "f12,f14,f2,f3,f6,f8,f10,f17,f18,f100",
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+        },
+        timeout=10,
+    ).get("data") or {}
+    return data.get("diff") or []
+
+
+def layer_index_from_watchlist(watchlist: Dict) -> Dict[str, List[str]]:
+    index: Dict[str, List[str]] = {}
+    for layer in watchlist.get("layers") or []:
+        layer_name = layer.get("name") or ""
+        for code in layer.get("codes", []):
+            code = str(code).strip()
+            if code:
+                index.setdefault(code, []).append(layer_name)
+    return index
+
+
+def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> Optional[Dict]:
+    code = str(row.get("f12") or "").strip()
+    name = str(row.get("f14") or code).strip()
+    if not code or not is_tradeable_main_board_code(code, name):
+        return None
+
+    price = safe_float(row.get("f2"))
+    pct = safe_float(row.get("f3"))
+    amount = safe_float(row.get("f6"))
+    turnover = safe_float(row.get("f8"))
+    volume_ratio = safe_float(row.get("f10"))
+    open_price = safe_float(row.get("f17"))
+    prev_close = safe_float(row.get("f18"))
+    industry = str(row.get("f100") or "").strip()
+
+    if price is None or pct is None or amount is None:
+        return None
+
+    min_amount = float(os.getenv("BROAD_MARKET_MIN_AMOUNT", "300000000"))
+    min_pct = float(os.getenv("BROAD_MARKET_MIN_PCT", "1.2"))
+    max_pct = float(os.getenv("BROAD_MARKET_MAX_PCT", "6.2"))
+    min_turnover = float(os.getenv("BROAD_MARKET_MIN_TURNOVER", "0.5"))
+    max_turnover = float(os.getenv("BROAD_MARKET_MAX_TURNOVER", "18"))
+    min_volume_ratio = float(os.getenv("BROAD_MARKET_MIN_VOLUME_RATIO", "1.0"))
+
+    if amount < min_amount:
+        return None
+    if pct < min_pct or pct > max_pct:
+        return None
+    if turnover is not None and (turnover < min_turnover or turnover > max_turnover):
+        return None
+    if volume_ratio is not None and volume_ratio < min_volume_ratio:
+        return None
+
+    theme_layers = layer_index.get(code, [])
+    theme_bonus = 2.0 if theme_layers else 0.0
+    open_strength = 0.0
+    if open_price and prev_close and open_price > prev_close:
+        open_strength = min(((open_price / prev_close) - 1) * 100, 3.0)
+
+    score = (
+        pct * 1.2
+        + min(log10(max(amount, 1) / 100_000_000), 2.0) * 2.0
+        + min(volume_ratio or 0, 4.0)
+        + min(turnover or 0, 8.0) * 0.15
+        + open_strength * 0.4
+        + theme_bonus
+    )
+    if pct >= 5.5:
+        score -= 1.5
+
+    reasons = [
+        f"涨幅 {pct:.2f}%，未超过追高过滤线",
+        f"成交额 {amount / 100_000_000:.1f}亿",
+    ]
+    if volume_ratio is not None:
+        reasons.append(f"量比 {volume_ratio:.2f}")
+    if turnover is not None:
+        reasons.append(f"换手 {turnover:.2f}%")
+    if theme_layers:
+        reasons.append("命中主题层：" + " / ".join(theme_layers[:2]))
+    if industry:
+        reasons.append(f"行业：{industry}")
+
+    return {
+        "code": code,
+        "name": name,
+        "price": price,
+        "pct_change": pct,
+        "amount": amount,
+        "turnover": turnover,
+        "volume_ratio": volume_ratio,
+        "industry": industry,
+        "theme_layers": theme_layers,
+        "score": score,
+        "action": "候选，等回踩/二次确认",
+        "reasons": reasons,
+    }
+
+
+def run_broad_market_scan(watchlist: Dict) -> Dict:
+    if not env_enabled("BROAD_MARKET_SCAN_ENABLED", "true"):
+        return {"enabled": False, "results": [], "failures": []}
+
+    max_pages = int(os.getenv("BROAD_MARKET_MAX_PAGES", "55"))
+    page_size = int(os.getenv("BROAD_MARKET_PAGE_SIZE", "100"))
+    layer_index = layer_index_from_watchlist(watchlist)
+    candidates = []
+    failures = []
+    seen_codes = set()
+
+    for page in range(1, max_pages + 1):
+        try:
+            rows = fetch_market_snapshot_page(page, page_size)
+            if not rows:
+                break
+            for row in rows:
+                item = classify_market_candidate(row, layer_index)
+                if not item or item["code"] in seen_codes:
+                    continue
+                seen_codes.add(item["code"])
+                candidates.append(item)
+        except Exception as exc:
+            logger.warning("broad market page %s skipped: %s", page, exc)
+            failures.append({"page": page, "error": str(exc)})
+            if len(failures) >= 3:
+                break
+
+    candidates.sort(key=lambda item: item.get("score", 0), reverse=True)
+    max_results = int(os.getenv("BROAD_MARKET_MAX_RESULTS", "12"))
+    return {
+        "enabled": True,
+        "scan_pages": max_pages,
+        "scanned_count": len(seen_codes),
+        "results": candidates[:max_results],
+        "failures": failures,
+    }
+
+
 def fetch_moving_averages(code: str) -> tuple:
     try:
         data = eastmoney_get(
@@ -585,6 +748,11 @@ def run_stock_radar() -> Dict:
     }
 
 
+def display_broad_market_results(results: List[Dict]) -> List[Dict]:
+    max_rows = int(os.getenv("BROAD_MARKET_DISPLAY_ROWS", "8"))
+    return results[:max_rows]
+
+
 def display_stock_results(results: List[Dict]) -> List[Dict]:
     max_rows = int(os.getenv("AI_STOCK_DISPLAY_ROWS", "40"))
     focus_codes = list(focus_stock_codes())
@@ -762,6 +930,7 @@ def run_radar() -> Dict:
             failures.append({"code": code, "error": str(exc)})
 
     stock_radar = run_stock_radar()
+    broad_market_scan = run_broad_market_scan(load_digital_infra_watchlist())
 
     now = datetime.now(BEIJING_TZ)
     return {
@@ -772,6 +941,7 @@ def run_radar() -> Dict:
         "results": results,
         "failures": failures,
         "stock_radar": stock_radar,
+        "broad_market_scan": broad_market_scan,
     }
 
 
@@ -792,6 +962,7 @@ def fmt(value, suffix: str = "", decimals: int = 2) -> str:
 def report_counts(report: Dict) -> Dict[str, int]:
     results = report.get("results", [])
     stock_results = report.get("stock_radar", {}).get("results", [])
+    broad_results = report.get("broad_market_scan", {}).get("results", [])
     return {
         "green": sum(1 for item in results if item.get("level") == "GREEN"),
         "yellow": sum(1 for item in results if item.get("level") == "YELLOW"),
@@ -800,6 +971,7 @@ def report_counts(report: Dict) -> Dict[str, int]:
         "stock_green": sum(1 for item in stock_results if item.get("level") == "GREEN"),
         "stock_yellow": sum(1 for item in stock_results if item.get("level") == "YELLOW"),
         "stock_red": sum(1 for item in stock_results if item.get("level") == "RED"),
+        "broad_candidates": len(broad_results),
     }
 
 
@@ -1053,6 +1225,38 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 )
             )
 
+    broad_scan = report.get("broad_market_scan", {})
+    broad_results = broad_scan.get("results", [])
+    if broad_scan.get("enabled") and broad_results:
+        lines.extend(
+            [
+                "",
+                "## 全市场短线候选",
+                "",
+                f"- 扫描候选数量：{broad_scan.get('scanned_count', 0)}；默认仅筛沪深主板，避开创业板/科创/北交权限问题。",
+                "- 说明：这是候选发现器，不是买入指令；下午追高过滤仍然生效。",
+                "",
+                "| 代码 | 名称 | 行业 | 最新价 | 涨跌幅 | 成交额 | 量比 | 换手 | 动作 | 原因 |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+            ]
+        )
+        for item in display_broad_market_results(broad_results):
+            reasons = "；".join(item.get("reasons", []))
+            lines.append(
+                "| {code} | {name} | {industry} | {price} | {pct} | {amount} | {vr} | {turnover} | {action} | {reasons} |".format(
+                    code=markdown_escape(item.get("code")),
+                    name=markdown_escape(item.get("name")),
+                    industry=markdown_escape(item.get("industry")),
+                    price=fmt(item.get("price")),
+                    pct=fmt(item.get("pct_change"), "%"),
+                    amount=yuan(item.get("amount")),
+                    vr=fmt(item.get("volume_ratio")),
+                    turnover=fmt(item.get("turnover"), "%"),
+                    action=markdown_escape(item.get("action")),
+                    reasons=markdown_escape(reasons),
+                )
+            )
+
     ai_summary = report.get("ai_summary")
     if ai_summary:
         lines.extend(["", "## AI 策略简报", "", str(ai_summary).strip()])
@@ -1082,6 +1286,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
         "portfolio": report.get("portfolio", {}),
         "results": report.get("results", []),
         "stock_radar": report.get("stock_radar", {}),
+        "broad_market_scan": report.get("broad_market_scan", {}),
         "failures": report.get("failures", []),
         "ai_summary": report.get("ai_summary", ""),
     }
@@ -1181,6 +1386,49 @@ def generate_html_email(report: Dict) -> str:
         </table>
         """
 
+    broad_rows = []
+    broad_scan = report.get("broad_market_scan", {})
+    for item in display_broad_market_results(broad_scan.get("results", [])):
+        reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
+        broad_rows.append(
+            f"""
+            <tr>
+                <td><strong>{html.escape(item['code'])}</strong><br>{html.escape(item['name'])}</td>
+                <td>{html.escape(item.get('industry') or '')}</td>
+                <td>{fmt(item['price'])}</td>
+                <td>{fmt(item['pct_change'], '%')}</td>
+                <td>{yuan(item.get('amount'))}</td>
+                <td>{fmt(item.get('volume_ratio'))}</td>
+                <td>{fmt(item.get('turnover'), '%')}</td>
+                <td>{html.escape(item.get('action') or '')}</td>
+                <td>{reasons}</td>
+            </tr>
+            """
+        )
+
+    broad_html = ""
+    if broad_rows:
+        broad_html = f"""
+        <h3>全市场短线候选</h3>
+        <div class="sub">
+            扫描 {broad_scan.get('scanned_count', 0)} 只候选；默认仅筛沪深主板，避开创业板/科创/北交权限问题。候选不等于买入，仍需等回踩或二次确认。
+        </div>
+        <table>
+            <tr>
+                <th>个股</th>
+                <th>行业</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>成交额</th>
+                <th>量比</th>
+                <th>换手</th>
+                <th>动作</th>
+                <th>原因</th>
+            </tr>
+            {''.join(broad_rows)}
+        </table>
+        """
+
     failure_html = ""
     if report["failures"]:
         items = "".join(
@@ -1253,6 +1501,7 @@ def generate_html_email(report: Dict) -> str:
                 {''.join(rows)}
             </table>
             {stock_html}
+            {broad_html}
             {ai_html}
             {failure_html}
             <div class="footer">
