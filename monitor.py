@@ -385,10 +385,30 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         return None
 
     theme_layers = layer_index.get(code, [])
-    theme_bonus = 2.0 if theme_layers else 0.0
+    theme_bonus = 2.0 if theme_layers else -0.8
     open_strength = 0.0
     if open_price and prev_close and open_price > prev_close:
         open_strength = min(((open_price / prev_close) - 1) * 100, 3.0)
+
+    intraday_pct = None
+    intraday_component = 0.0
+    if price and open_price:
+        intraday_pct = (price / open_price - 1) * 100
+        if pct > 0 and intraday_pct >= 0.4:
+            intraday_component = 0.8
+        elif pct > 0 and intraday_pct <= -1.2:
+            intraday_component = -1.8
+        elif pct > 0 and -0.5 <= intraday_pct <= 0.4:
+            intraday_component = 0.2
+
+    turnover_component = 0.0
+    if turnover is not None:
+        if 3 <= turnover <= 12:
+            turnover_component = 1.2
+        elif turnover > 15:
+            turnover_component = -1.2
+        elif turnover < 1:
+            turnover_component = -0.6
 
     score = (
         pct * 1.2
@@ -396,6 +416,8 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         + min(volume_ratio or 0, 4.0)
         + min(turnover or 0, 8.0) * 0.15
         + open_strength * 0.4
+        + intraday_component
+        + turnover_component
         + theme_bonus
     )
     if pct >= 5.5:
@@ -409,8 +431,17 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         reasons.append(f"量比 {volume_ratio:.2f}")
     if turnover is not None:
         reasons.append(f"换手 {turnover:.2f}%")
+    if intraday_pct is not None:
+        if intraday_pct >= 0.4:
+            reasons.append(f"开盘后仍上涨 {intraday_pct:.2f}%，承接较好")
+        elif intraday_pct <= -1.2:
+            reasons.append(f"开盘后回落 {intraday_pct:.2f}%，可能是高开回落，不急买")
+        else:
+            reasons.append(f"开盘后变化 {intraday_pct:.2f}%，等待9:40确认")
     if theme_layers:
         reasons.append("命中主题层：" + " / ".join(theme_layers[:2]))
+    else:
+        reasons.append("未命中当前AI/数字基建主线，降级为全市场异动")
     if industry:
         reasons.append(f"行业：{industry}")
 
@@ -422,6 +453,7 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         "amount": amount,
         "turnover": turnover,
         "volume_ratio": volume_ratio,
+        "intraday_pct": intraday_pct,
         "industry": industry,
         "theme_layers": theme_layers,
         "score": score,
@@ -775,6 +807,7 @@ def broad_market_tiers(results: List[Dict], portfolio: Optional[Dict] = None) ->
     action_max_volume_ratio = float(os.getenv("BROAD_MARKET_ACTION_MAX_VOLUME_RATIO", "4.5"))
     action_min_turnover = float(os.getenv("BROAD_MARKET_ACTION_MIN_TURNOVER", "0.8"))
     action_max_turnover = float(os.getenv("BROAD_MARKET_ACTION_MAX_TURNOVER", "12"))
+    action_min_score = float(os.getenv("BROAD_MARKET_ACTION_MIN_SCORE", "8.0"))
 
     actionable = []
     for item in results:
@@ -791,6 +824,8 @@ def broad_market_tiers(results: List[Dict], portfolio: Optional[Dict] = None) ->
         if volume_ratio < action_min_volume_ratio or volume_ratio > action_max_volume_ratio:
             continue
         if turnover < action_min_turnover or turnover > action_max_turnover:
+            continue
+        if float(item.get("score") or 0) < action_min_score:
             continue
         action_item = dict(item)
         if item.get("theme_layers"):
@@ -852,6 +887,12 @@ def daily_risk_gate(portfolio: Dict, pilot: Dict) -> Dict:
     return {"blocked": False, "level": "OPEN", "reason": "当日风险闸门未触发"}
 
 
+def minimum_lot_size(code: str) -> int:
+    if str(code).startswith("688"):
+        return 200
+    return 100
+
+
 def short_term_trade_plan(item: Dict, portfolio: Dict) -> Dict:
     pilot = short_term_pilot_policy(portfolio)
     if not pilot or not pilot.get("enabled"):
@@ -864,6 +905,8 @@ def short_term_trade_plan(item: Dict, portfolio: Dict) -> Dict:
     ma60 = item.get("ma60")
     price = item.get("price")
     level = item.get("level")
+    lot_size = minimum_lot_size(str(item.get("code") or ""))
+    min_lot_cost = (float(price) * lot_size) if price is not None else None
 
     if risk_gate["blocked"]:
         return {"tier": "禁止新开", "capital": 0, "reason": risk_gate["reason"]}
@@ -875,6 +918,16 @@ def short_term_trade_plan(item: Dict, portfolio: Dict) -> Dict:
         return {"tier": "等回踩", "capital": 0, "reason": f"涨幅 {pct:.2f}% 已接近追高区，等二次确认"}
     if pct <= float(pilot.get("avoid_weak_pct", -3.5)):
         return {"tier": "观察承接", "capital": 0, "reason": f"跌幅 {pct:.2f}% 较大，先看承接不急买"}
+
+    default_capital = float(pilot.get("capital_per_stock") or 0)
+    strong_capital = float(pilot.get("strong_signal_capital_per_stock") or default_capital)
+    max_allowed_capital = max(default_capital, strong_capital)
+    if min_lot_cost and min_lot_cost > max_allowed_capital:
+        return {
+            "tier": "观察",
+            "capital": 0,
+            "reason": f"最小一手约{yuan(min_lot_cost)}，超过当前单票上限{yuan(max_allowed_capital)}，不强行放大仓位",
+        }
 
     trend_ok = bool(price and ma20 and ma60 and price > ma20 > ma60)
     active_ok = amount >= float(pilot.get("min_action_amount", 500_000_000))
