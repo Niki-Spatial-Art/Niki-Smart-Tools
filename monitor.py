@@ -433,8 +433,8 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     if not env_enabled("BROAD_MARKET_SCAN_ENABLED", "true"):
         return {"enabled": False, "results": [], "failures": []}
 
-    max_pages = int(os.getenv("BROAD_MARKET_MAX_PAGES", "55"))
-    page_size = int(os.getenv("BROAD_MARKET_PAGE_SIZE", "100"))
+    max_pages = int(os.getenv("BROAD_MARKET_MAX_PAGES", "28"))
+    page_size = int(os.getenv("BROAD_MARKET_PAGE_SIZE", "200"))
     layer_index = layer_index_from_watchlist(watchlist)
     candidates = []
     failures = []
