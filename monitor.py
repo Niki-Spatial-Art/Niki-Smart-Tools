@@ -439,12 +439,14 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     candidates = []
     failures = []
     seen_codes = set()
+    total_rows_seen = 0
 
     for page in range(1, max_pages + 1):
         try:
             rows = fetch_market_snapshot_page(page, page_size)
             if not rows:
                 break
+            total_rows_seen += len(rows)
             for row in rows:
                 item = classify_market_candidate(row, layer_index)
                 if not item or item["code"] in seen_codes:
@@ -462,7 +464,8 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     return {
         "enabled": True,
         "scan_pages": max_pages,
-        "scanned_count": len(seen_codes),
+        "scanned_count": total_rows_seen,
+        "candidate_count": len(seen_codes),
         "results": candidates[:max_results],
         "failures": failures,
     }
@@ -1233,7 +1236,8 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 "",
                 "## 全市场短线候选",
                 "",
-                f"- 扫描候选数量：{broad_scan.get('scanned_count', 0)}；默认仅筛沪深主板，避开创业板/科创/北交权限问题。",
+                f"- 扫描A股数量：{broad_scan.get('scanned_count', 0)}；过滤后候选：{broad_scan.get('candidate_count', len(broad_results))}。",
+                "- 默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；创业板/科创可观察，但不作为当前下单候选。",
                 "- 说明：这是候选发现器，不是买入指令；下午追高过滤仍然生效。",
                 "",
                 "| 代码 | 名称 | 行业 | 最新价 | 涨跌幅 | 成交额 | 量比 | 换手 | 动作 | 原因 |",
@@ -1411,7 +1415,8 @@ def generate_html_email(report: Dict) -> str:
         broad_html = f"""
         <h3>全市场短线候选</h3>
         <div class="sub">
-            扫描 {broad_scan.get('scanned_count', 0)} 只候选；默认仅筛沪深主板，避开创业板/科创/北交权限问题。候选不等于买入，仍需等回踩或二次确认。
+            扫描A股 {broad_scan.get('scanned_count', 0)} 只；过滤后候选 {broad_scan.get('candidate_count', len(broad_rows))} 只。
+            默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；候选不等于买入，仍需等回踩或二次确认。
         </div>
         <table>
             <tr>
