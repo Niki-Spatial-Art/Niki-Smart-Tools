@@ -100,6 +100,30 @@
       ]
     },
     {
+      "id": "photonic_compute_interconnect",
+      "name": "光子计算、硅光、CPO、光互连",
+      "logic": "当AI算力从传统电互连继续扩容，瓶颈会从GPU本身扩散到光互连、硅光、CPO、光芯片、光器件和测试验证。该层用于观察从光模块行情向下一代光子计算架构扩散的证据；短线只看同层级共振、成交额确认和回踩后二次确认，不把远期叙事当作追高理由。",
+      "codes": [
+        "300308",
+        "300502",
+        "300394",
+        "002281",
+        "000988",
+        "688808",
+        "688498",
+        "688205",
+        "300570",
+        "002902",
+        "300620",
+        "688313",
+        "688195",
+        "688048",
+        "603083",
+        "300548",
+        "688702"
+      ]
+    },
+    {
       "id": "optical_test_instruments",
       "name": "光模块测试仪器、检测设备",
       "logic": "联讯仪器代表光模块测试设备环节，受益于800G/1.6T、高速光模块和硅光迭代；但新股极端高估值时只做景气度温度计，不追涨。",
@@ -394,6 +418,7 @@
     "memory_compute_near_data",
     "optical_test_instruments",
     "optical_cpo",
+    "photonic_compute_interconnect",
     "network_switching_communication",
     "ai_chips",
     "edge_ai_terminal_chips",

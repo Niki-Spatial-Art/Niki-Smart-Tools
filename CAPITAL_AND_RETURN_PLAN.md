@@ -96,14 +96,15 @@ Priority short-term tracks:
 
 ```text
 1. Optical modules / CPO / communication switching
-2. Compute-in-memory / near-data compute / HBM storage
-3. Domestic AI chips / AI servers / liquid cooling and power
-4. Semiconductor equipment / OLED large-panel equipment
-5. Humanoid robotics / reducers / servo / sensors
-6. Low-altitude economy / drones / eVTOL / air traffic control
-7. Commercial space / satellite internet / navigation and remote sensing
-8. AI applications / office software / education / content / fintech
-9. Green power operators / compute-power coordination / green certificate and green electricity trading
+2. Photonic computing / silicon photonics / CPO / optical interconnect
+3. Compute-in-memory / near-data compute / HBM storage
+4. Domestic AI chips / AI servers / liquid cooling and power
+5. Semiconductor equipment / OLED large-panel equipment
+6. Humanoid robotics / reducers / servo / sensors
+7. Low-altitude economy / drones / eVTOL / air traffic control
+8. Commercial space / satellite internet / navigation and remote sensing
+9. AI applications / office software / education / content / fintech
+10. Green power operators / compute-power coordination / green certificate and green electricity trading
 ```
 
 Daily operating rhythm:
