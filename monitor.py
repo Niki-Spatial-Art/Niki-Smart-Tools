@@ -460,7 +460,7 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
                 break
 
     candidates.sort(key=lambda item: item.get("score", 0), reverse=True)
-    max_results = int(os.getenv("BROAD_MARKET_MAX_RESULTS", "12"))
+    max_results = int(os.getenv("BROAD_MARKET_MAX_RESULTS", "50"))
     return {
         "enabled": True,
         "scan_pages": max_pages,
@@ -754,6 +754,51 @@ def run_stock_radar() -> Dict:
 def display_broad_market_results(results: List[Dict]) -> List[Dict]:
     max_rows = int(os.getenv("BROAD_MARKET_DISPLAY_ROWS", "8"))
     return results[:max_rows]
+
+
+def broad_market_tiers(results: List[Dict]) -> Dict[str, List[Dict]]:
+    strength_rows = int(os.getenv("BROAD_MARKET_STRENGTH_ROWS", "50"))
+    watch_rows = int(os.getenv("BROAD_MARKET_WATCH_ROWS", "10"))
+    action_rows = int(os.getenv("BROAD_MARKET_ACTION_ROWS", "3"))
+    action_min_amount = float(os.getenv("BROAD_MARKET_ACTION_MIN_AMOUNT", "500000000"))
+    action_min_pct = float(os.getenv("BROAD_MARKET_ACTION_MIN_PCT", "1.8"))
+    action_max_pct = float(os.getenv("BROAD_MARKET_ACTION_MAX_PCT", "5.2"))
+    action_min_volume_ratio = float(os.getenv("BROAD_MARKET_ACTION_MIN_VOLUME_RATIO", "1.2"))
+    action_max_volume_ratio = float(os.getenv("BROAD_MARKET_ACTION_MAX_VOLUME_RATIO", "4.5"))
+    action_min_turnover = float(os.getenv("BROAD_MARKET_ACTION_MIN_TURNOVER", "0.8"))
+    action_max_turnover = float(os.getenv("BROAD_MARKET_ACTION_MAX_TURNOVER", "12"))
+
+    actionable = []
+    for item in results:
+        pct = item.get("pct_change")
+        amount = item.get("amount")
+        volume_ratio = item.get("volume_ratio")
+        turnover = item.get("turnover")
+        if pct is None or amount is None or volume_ratio is None or turnover is None:
+            continue
+        if amount < action_min_amount:
+            continue
+        if pct < action_min_pct or pct > action_max_pct:
+            continue
+        if volume_ratio < action_min_volume_ratio or volume_ratio > action_max_volume_ratio:
+            continue
+        if turnover < action_min_turnover or turnover > action_max_turnover:
+            continue
+        action_item = dict(item)
+        action_item["action"] = "可操作候选，限9:40二次确认后小仓"
+        action_item["reasons"] = [
+            "通过短线可操作池过滤：涨幅不过热、成交额够、量比放大、换手未失控",
+            *item.get("reasons", []),
+        ]
+        actionable.append(action_item)
+        if len(actionable) >= action_rows:
+            break
+
+    return {
+        "strength": results[:strength_rows],
+        "watch": results[:watch_rows],
+        "actionable": actionable,
+    }
 
 
 def display_stock_results(results: List[Dict]) -> List[Dict]:
@@ -1231,20 +1276,26 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
     broad_scan = report.get("broad_market_scan", {})
     broad_results = broad_scan.get("results", [])
     if broad_scan.get("enabled") and broad_results:
+        tiers = broad_market_tiers(broad_results)
         lines.extend(
             [
                 "",
-                "## 全市场短线候选",
+                "## 全市场短线雷达",
                 "",
                 f"- 扫描A股数量：{broad_scan.get('scanned_count', 0)}；过滤后候选：{broad_scan.get('candidate_count', len(broad_results))}。",
                 "- 默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；创业板/科创可观察，但不作为当前下单候选。",
-                "- 说明：这是候选发现器，不是买入指令；下午追高过滤仍然生效。",
+                "- 结构：强度榜用于看风格；观察池用于明天盯盘；可操作池最多3只，仍需9:40二次确认。",
+                "- 纪律：每天最多新买1只，同时最多持有3只短线个股；没有绿色执行条件就空手。",
+                "",
+                "### 全市场强度榜 Top 50",
+                "",
+                "- 系统看的强弱排序，不等于买入。",
                 "",
                 "| 代码 | 名称 | 行业 | 最新价 | 涨跌幅 | 成交额 | 量比 | 换手 | 动作 | 原因 |",
                 "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
             ]
         )
-        for item in display_broad_market_results(broad_results):
+        for item in tiers["strength"]:
             reasons = "；".join(item.get("reasons", []))
             lines.append(
                 "| {code} | {name} | {industry} | {price} | {pct} | {amount} | {vr} | {turnover} | {action} | {reasons} |".format(
@@ -1260,6 +1311,64 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                     reasons=markdown_escape(reasons),
                 )
             )
+        lines.extend(
+            [
+                "",
+                "### 今日观察池 Top 10",
+                "",
+                "- 给你明天早盘重点看，不要求全部下单。",
+                "",
+                "| 代码 | 名称 | 行业 | 最新价 | 涨跌幅 | 成交额 | 量比 | 换手 | 动作 | 原因 |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+            ]
+        )
+        for item in tiers["watch"]:
+            reasons = "；".join(item.get("reasons", []))
+            lines.append(
+                "| {code} | {name} | {industry} | {price} | {pct} | {amount} | {vr} | {turnover} | {action} | {reasons} |".format(
+                    code=markdown_escape(item.get("code")),
+                    name=markdown_escape(item.get("name")),
+                    industry=markdown_escape(item.get("industry")),
+                    price=fmt(item.get("price")),
+                    pct=fmt(item.get("pct_change"), "%"),
+                    amount=yuan(item.get("amount")),
+                    vr=fmt(item.get("volume_ratio")),
+                    turnover=fmt(item.get("turnover"), "%"),
+                    action=markdown_escape(item.get("action")),
+                    reasons=markdown_escape(reasons),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "### 今日可操作池 1-3只",
+                "",
+                "- 仅代表具备短线试单条件；仍然必须等9:40放量、板块强度和盘口承接确认。",
+                "",
+                "| 代码 | 名称 | 行业 | 最新价 | 涨跌幅 | 成交额 | 量比 | 换手 | 动作 | 原因 |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+            ]
+        )
+        action_items = tiers["actionable"]
+        if action_items:
+            for item in action_items:
+                reasons = "；".join(item.get("reasons", []))
+                lines.append(
+                    "| {code} | {name} | {industry} | {price} | {pct} | {amount} | {vr} | {turnover} | {action} | {reasons} |".format(
+                        code=markdown_escape(item.get("code")),
+                        name=markdown_escape(item.get("name")),
+                        industry=markdown_escape(item.get("industry")),
+                        price=fmt(item.get("price")),
+                        pct=fmt(item.get("pct_change"), "%"),
+                        amount=yuan(item.get("amount")),
+                        vr=fmt(item.get("volume_ratio")),
+                        turnover=fmt(item.get("turnover"), "%"),
+                        action=markdown_escape(item.get("action")),
+                        reasons=markdown_escape(reasons),
+                    )
+                )
+        else:
+            lines.append("| -- | 今日无合格可操作池 | -- | -- | -- | -- | -- | -- | 空手 | 没有通过成交额/量比/涨幅/换手综合过滤 |")
 
     ai_summary = report.get("ai_summary")
     if ai_summary:
@@ -1390,34 +1499,55 @@ def generate_html_email(report: Dict) -> str:
         </table>
         """
 
-    broad_rows = []
     broad_scan = report.get("broad_market_scan", {})
-    for item in display_broad_market_results(broad_scan.get("results", [])):
-        reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
-        broad_rows.append(
-            f"""
-            <tr>
-                <td><strong>{html.escape(item['code'])}</strong><br>{html.escape(item['name'])}</td>
-                <td>{html.escape(item.get('industry') or '')}</td>
-                <td>{fmt(item['price'])}</td>
-                <td>{fmt(item['pct_change'], '%')}</td>
-                <td>{yuan(item.get('amount'))}</td>
-                <td>{fmt(item.get('volume_ratio'))}</td>
-                <td>{fmt(item.get('turnover'), '%')}</td>
-                <td>{html.escape(item.get('action') or '')}</td>
-                <td>{reasons}</td>
-            </tr>
-            """
-        )
+    broad_tiers = broad_market_tiers(broad_scan.get("results", []))
+
+    def render_broad_table_rows(items: List[Dict]) -> str:
+        rows = []
+        for item in items:
+            reasons = "<br>".join(html.escape(reason) for reason in item.get("reasons", []))
+            rows.append(
+                f"""
+                <tr>
+                    <td><strong>{html.escape(item['code'])}</strong><br>{html.escape(item['name'])}</td>
+                    <td>{html.escape(item.get('industry') or '')}</td>
+                    <td>{fmt(item['price'])}</td>
+                    <td>{fmt(item['pct_change'], '%')}</td>
+                    <td>{yuan(item.get('amount'))}</td>
+                    <td>{fmt(item.get('volume_ratio'))}</td>
+                    <td>{fmt(item.get('turnover'), '%')}</td>
+                    <td>{html.escape(item.get('action') or '')}</td>
+                    <td>{reasons}</td>
+                </tr>
+                """
+            )
+        return "".join(rows)
 
     broad_html = ""
-    if broad_rows:
+    if broad_tiers["strength"]:
+        actionable_rows = render_broad_table_rows(broad_tiers["actionable"])
+        if not actionable_rows:
+            actionable_rows = """
+                <tr>
+                    <td><strong>--</strong><br>今日无合格可操作池</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>空手</td>
+                    <td>没有通过成交额/量比/涨幅/换手综合过滤</td>
+                </tr>
+            """
         broad_html = f"""
-        <h3>全市场短线候选</h3>
+        <h3>全市场短线雷达</h3>
         <div class="sub">
-            扫描A股 {broad_scan.get('scanned_count', 0)} 只；过滤后候选 {broad_scan.get('candidate_count', len(broad_rows))} 只。
-            默认买入池仅筛沪深主板，避开创业板/科创/北交权限问题；候选不等于买入，仍需等回踩或二次确认。
+            扫描A股 {broad_scan.get('scanned_count', 0)} 只；过滤后候选 {broad_scan.get('candidate_count', len(broad_tiers["strength"]))} 只。
+            强度榜用于看风格，观察池用于明天盯盘，可操作池最多3只；每天最多新买1只。
         </div>
+        <h4>全市场强度榜 Top 50</h4>
+        <div class="sub">系统看的强弱排序，不等于买入。</div>
         <table>
             <tr>
                 <th>个股</th>
@@ -1430,7 +1560,39 @@ def generate_html_email(report: Dict) -> str:
                 <th>动作</th>
                 <th>原因</th>
             </tr>
-            {''.join(broad_rows)}
+            {render_broad_table_rows(broad_tiers["strength"])}
+        </table>
+        <h4>今日观察池 Top 10</h4>
+        <div class="sub">给你明天早盘重点看，不要求全部下单。</div>
+        <table>
+            <tr>
+                <th>个股</th>
+                <th>行业</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>成交额</th>
+                <th>量比</th>
+                <th>换手</th>
+                <th>动作</th>
+                <th>原因</th>
+            </tr>
+            {render_broad_table_rows(broad_tiers["watch"])}
+        </table>
+        <h4>今日可操作池 1-3只</h4>
+        <div class="sub">仅代表具备短线试单条件；仍然必须等9:40放量、板块强度和盘口承接确认。</div>
+        <table>
+            <tr>
+                <th>个股</th>
+                <th>行业</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>成交额</th>
+                <th>量比</th>
+                <th>换手</th>
+                <th>动作</th>
+                <th>原因</th>
+            </tr>
+            {actionable_rows}
         </table>
         """
 

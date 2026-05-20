@@ -237,6 +237,40 @@ Short-term entry rules:
 5. Position size: first position 0.5%-1% of total capital; no intraday revenge trade.
 ```
 
+## Broad A-Share Short-Term Radar
+
+The radar can scan the full A-share market, but the decision layer must stay narrow.
+
+```text
+Full A-share scan: about 5,500 stocks
+Basic filters: liquidity, tradability, risk flags, intraday strength
+Strength board: top 50, used to understand market style
+Watch pool: top 10, used for the next 09:40 decision window
+Action pool: 1-3 stocks, only eligible for small pilot orders after confirmation
+Actual buy: 0-1 new stock per day
+```
+
+Position discipline:
+
+```text
+1. ETF core remains the main engine.
+2. Short-term stocks are only return enhancers, not the main engine.
+3. Hold at most 3 short-term individual stocks at the same time.
+4. First order stays at 5,000-10,000 unless the system has 20+ reviewed trades.
+5. If the action pool is empty, the correct action is no trade.
+6. A green action candidate still requires 09:40 volume, layer strength, and order-book confirmation.
+```
+
+Action-pool filters:
+
+```text
+1. Main-board tradable first, because ChiNext/STAR/Beijing permissions may block execution.
+2. Exclude ST, new stocks, illiquid names, and obvious one-word limit-up situations.
+3. Prefer stocks with enough turnover, sufficient amount, and volume ratio expansion.
+4. Avoid overheated names that already spiked too far intraday.
+5. Never buy only because a stock appears in the strength board.
+```
+
 ## September Decision Gate For Shop Principal
 
 The 700,000 shop principal should not be pulled back only because the market feels exciting. It can be reconsidered around 2026-09 only if the trading system proves it can beat the shop cashflow with controlled drawdown.
