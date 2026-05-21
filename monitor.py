@@ -6,9 +6,12 @@ adds an optional AI summary, and sends a short email report.
 """
 
 import html
+import contextlib
+import io
 import json
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -340,6 +343,86 @@ def option_time_risk(days_to_expiry: int, premium: float) -> str:
     return f"{level}：估算每天时间损耗约{yuan(daily_decay)}，越临近到期越快"
 
 
+def xingyao_sdk_paths() -> List[str]:
+    raw = os.getenv("XINGYAO_SDK_PATHS", "")
+    paths = [item.strip() for item in raw.split(os.pathsep) if item.strip()]
+    sdk_root = os.getenv("XINGYAO_SDK_ROOT", "").strip()
+    if sdk_root:
+        root = Path(sdk_root).expanduser()
+        paths.extend([str(root / "amazingdata_sdk"), str(root / "xingyao_sdk")])
+    return paths
+
+
+def fetch_xingyao_option_basic_rows() -> Dict:
+    """Fetch ETF option basic info from Galaxy AmazingData when configured locally."""
+    if not env_enabled("XINGYAO_ENABLED", "false"):
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": "disabled"}
+
+    username = os.getenv("XINGYAO_USER", "").strip()
+    password = os.getenv("XINGYAO_PASSWORD", "").strip()
+    if not username or not password:
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": "missing credentials"}
+
+    for sdk_path in xingyao_sdk_paths():
+        if sdk_path and os.path.exists(sdk_path) and sdk_path not in sys.path:
+            sys.path.insert(0, sdk_path)
+
+    try:
+        import AmazingData as ad  # type: ignore
+    except Exception as exc:
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": f"import failed: {exc}"}
+
+    host = os.getenv("XINGYAO_HOST", "101.230.159.234")
+    port = int(os.getenv("XINGYAO_PORT", "8600"))
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            ok = ad.login(username=username, password=password, host=host, port=port)
+        if not ok:
+            return {"enabled": False, "source": "simulation", "contracts": [], "error": "login failed"}
+
+        base = ad.BaseData()
+        info = ad.InfoData()
+        option_codes = base.get_option_code_list("EXTRA_ETF_OP")
+        option_info = info.get_option_basic_info(option_codes, is_local=False)
+        contracts = option_info.to_dict("records") if hasattr(option_info, "to_dict") else []
+        return {
+            "enabled": True,
+            "source": "xingyao_basic",
+            "contracts": contracts,
+            "contract_count": len(contracts),
+            "option_code_count": len(option_codes),
+            "error": "",
+        }
+    except Exception as exc:
+        logger.warning("Xingyao option basic fetch failed: %s", exc)
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": str(exc)}
+    finally:
+        with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            ad.logout()
+
+
+def xingyao_contract_for(option_rows: List[Dict], etf_code: str, direction: str, strike: float, expiry: str) -> Optional[Dict]:
+    contract_type = "C" if direction == "认购" else "P"
+    expiry_key = expiry.replace("-", "")[:6]
+    candidates = []
+    for row in option_rows:
+        exchange_code = str(row.get("EXCHANGE_CODE", ""))
+        if not exchange_code.startswith(etf_code):
+            continue
+        if str(row.get("CONTRACT_TYPE", "")).upper() != contract_type:
+            continue
+        if str(row.get("DELIVERY_MONTH", "")) != expiry_key:
+            continue
+        try:
+            row_strike = float(row.get("EXERCISE_PRICE"))
+        except (TypeError, ValueError):
+            continue
+        candidates.append((abs(row_strike - strike), row))
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item[0])[0][1]
+
+
 def run_option_sim_radar() -> Dict:
     if not env_enabled("OPTION_SIM_RADAR_ENABLED", "true"):
         return {"enabled": False, "results": [], "failures": []}
@@ -349,6 +432,8 @@ def run_option_sim_radar() -> Dict:
     days_to_expiry = max((expiry.date() - now.date()).days, 1)
     results = []
     failures = []
+    xingyao = fetch_xingyao_option_basic_rows()
+    xingyao_rows = xingyao.get("contracts", [])
 
     for code in load_option_etf_watchlist():
         try:
@@ -357,6 +442,13 @@ def run_option_sim_radar() -> Dict:
                 raise ValueError("missing ETF price")
             strike = nearest_option_strike(quote.price)
             for direction in ("认购", "认沽"):
+                xingyao_contract = xingyao_contract_for(
+                    xingyao_rows,
+                    code,
+                    direction,
+                    strike,
+                    expiry.strftime("%Y-%m-%d"),
+                )
                 premium = estimate_option_premium(quote.price, days_to_expiry, direction)
                 break_even = strike + premium if direction == "认购" else strike - premium
                 if quote.pct_change is None:
@@ -383,6 +475,9 @@ def run_option_sim_radar() -> Dict:
                         "max_loss": premium * 10000,
                         "time_risk": option_time_risk(days_to_expiry, premium),
                         "suitability": suitability,
+                        "xingyao_contract_code": (xingyao_contract or {}).get("EXCHANGE_CODE"),
+                        "xingyao_contract_name": (xingyao_contract or {}).get("CONTRACT_FULL_NAME"),
+                        "xingyao_listing_ref_price": safe_float((xingyao_contract or {}).get("LISTING_REF_PRICE")),
                         "scenarios": [
                             option_payoff(quote.price, strike, premium, direction, move)
                             for move in (-3, -2, -1, 1, 2, 3)
@@ -400,6 +495,10 @@ def run_option_sim_radar() -> Dict:
         "expiry": expiry.strftime("%Y-%m-%d"),
         "days_to_expiry": days_to_expiry,
         "contract_multiplier": 10000,
+        "data_source": xingyao.get("source", "simulation"),
+        "xingyao_enabled": xingyao.get("enabled", False),
+        "xingyao_contract_count": xingyao.get("contract_count", 0),
+        "xingyao_error": xingyao.get("error", ""),
         "results": results,
         "failures": failures,
     }
@@ -1611,9 +1710,15 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
     option_radar = report.get("option_sim_radar", {})
     option_results = option_radar.get("results", [])
     if option_radar.get("enabled") and option_results:
+        option_source_line = (
+            f"- Data source: {option_radar.get('data_source', 'simulation')}; "
+            f"Xingyao contracts: {option_radar.get('xingyao_contract_count', 0)}; "
+            f"error: {option_radar.get('xingyao_error', '') or '-'}"
+        )
         lines.extend(
             [
                 "",
+                option_source_line,
                 "## 期权模拟雷达",
                 "",
                 f"- 标的 ETF：{' / '.join(load_option_etf_watchlist())}",
@@ -1630,6 +1735,12 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 f"{scenario.get('move_pct'):+.0f}%:{yuan(scenario.get('profit'))}"
                 for scenario in item.get("scenarios", [])
             )
+            suitability_text = item.get("suitability")
+            if item.get("xingyao_contract_code"):
+                suitability_text = (
+                    f"{suitability_text}; Xingyao: {item.get('xingyao_contract_code')} "
+                    f"ref={fmt(item.get('xingyao_listing_ref_price'), decimals=4)}"
+                )
             lines.append(
                 "| {code} {name} | {direction} | {strike} | {expiry} | {premium} | {break_even} | {max_loss} | {scenarios} | {time_risk} | {suitability} |".format(
                     code=markdown_escape(item.get("code")),
@@ -1642,7 +1753,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                     max_loss=yuan(item.get("max_loss")),
                     scenarios=markdown_escape(scenario_text),
                     time_risk=markdown_escape(item.get("time_risk")),
-                    suitability=markdown_escape(item.get("suitability")),
+                    suitability=markdown_escape(suitability_text),
                 )
             )
 
@@ -1936,6 +2047,12 @@ def generate_html_email(report: Dict) -> str:
             f"{scenario.get('move_pct'):+.0f}%：{yuan(scenario.get('profit'))}"
             for scenario in item.get("scenarios", [])
         )
+        xingyao_hint = ""
+        if item.get("xingyao_contract_code"):
+            xingyao_hint = (
+                f"<br><span class=\"sub\">Xingyao: {html.escape(str(item.get('xingyao_contract_code')))} "
+                f"ref={fmt(item.get('xingyao_listing_ref_price'), decimals=4)}</span>"
+            )
         option_rows.append(
             f"""
             <tr>
@@ -1948,7 +2065,7 @@ def generate_html_email(report: Dict) -> str:
                 <td>{yuan(item.get('max_loss'))}</td>
                 <td>{scenario_text}</td>
                 <td>{html.escape(item.get('time_risk', ''))}</td>
-                <td>{html.escape(item.get('suitability', ''))}</td>
+                <td>{html.escape(item.get('suitability', ''))}{xingyao_hint}</td>
             </tr>
             """
         )
@@ -1958,6 +2075,9 @@ def generate_html_email(report: Dict) -> str:
         option_html = f"""
         <h3>期权模拟雷达</h3>
         <div class="sub">
+            Data source: {html.escape(str(option_radar.get('data_source', 'simulation')))}；
+            Xingyao contracts: {html.escape(str(option_radar.get('xingyao_contract_count', 0)))}；
+            error: {html.escape(str(option_radar.get('xingyao_error', '') or '-'))}<br>
             标的 ETF：{html.escape(' / '.join(load_option_etf_watchlist()))}。
             合约乘数：{html.escape(str(option_radar.get('contract_multiplier', 10000)))} 份ETF/张；
             估算到期日：{html.escape(str(option_radar.get('expiry', '')))}；
