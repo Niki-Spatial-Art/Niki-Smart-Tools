@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from math import log10
 from statistics import mean
@@ -63,6 +63,7 @@ DEFAULT_WATCHLIST = [
     "518880",  # Gold ETF
 ]
 
+DEFAULT_OPTION_ETF_WATCHLIST = ["510300", "588000", "512100", "510050"]
 DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180", "513500"}
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
@@ -271,6 +272,139 @@ def fetch_quote(code: str) -> Quote:
     raise RuntimeError("; ".join(errors))
 
 
+def load_option_etf_watchlist() -> List[str]:
+    raw = os.getenv("OPTION_ETF_WATCHLIST", "")
+    if not raw:
+        return DEFAULT_OPTION_ETF_WATCHLIST
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def fourth_wednesday(year: int, month: int) -> datetime:
+    day = datetime(year, month, 1)
+    wednesdays = []
+    while day.month == month:
+        if day.weekday() == 2:
+            wednesdays.append(day)
+        day += timedelta(days=1)
+    return BEIJING_TZ.localize(wednesdays[3])
+
+
+def next_option_expiry(now: datetime) -> datetime:
+    expiry = fourth_wednesday(now.year, now.month).replace(hour=15, minute=0, second=0, microsecond=0)
+    if now >= expiry:
+        next_month = 1 if now.month == 12 else now.month + 1
+        next_year = now.year + 1 if now.month == 12 else now.year
+        expiry = fourth_wednesday(next_year, next_month).replace(hour=15, minute=0, second=0, microsecond=0)
+    return expiry
+
+
+def option_strike_step(price: float) -> float:
+    if price < 3:
+        return 0.05
+    if price < 5:
+        return 0.1
+    return 0.25
+
+
+def nearest_option_strike(price: float) -> float:
+    step = option_strike_step(price)
+    return round(round(price / step) * step, 3)
+
+
+def estimate_option_premium(price: float, days_to_expiry: int, direction: str) -> float:
+    base_vol = float(os.getenv("OPTION_SIM_BASE_VOL", "0.24"))
+    time_value = price * base_vol * max((days_to_expiry / 365) ** 0.5, 0.04) * 0.35
+    floor = float(os.getenv("OPTION_SIM_MIN_PREMIUM", "0.015"))
+    direction_buffer = 1.05 if direction == "认沽" else 1.0
+    return round(max(time_value * direction_buffer, floor), 4)
+
+
+def option_payoff(price: float, strike: float, premium: float, direction: str, move_pct: float) -> Dict:
+    future_price = price * (1 + move_pct / 100)
+    intrinsic = max(future_price - strike, 0) if direction == "认购" else max(strike - future_price, 0)
+    return {
+        "move_pct": move_pct,
+        "future_price": future_price,
+        "profit": (intrinsic - premium) * 10000,
+    }
+
+
+def option_time_risk(days_to_expiry: int, premium: float) -> str:
+    daily_decay = premium * 10000 / max(days_to_expiry, 1)
+    if days_to_expiry <= 7:
+        level = "高"
+    elif days_to_expiry <= 21:
+        level = "中"
+    else:
+        level = "低"
+    return f"{level}：估算每天时间损耗约{yuan(daily_decay)}，越临近到期越快"
+
+
+def run_option_sim_radar() -> Dict:
+    if not env_enabled("OPTION_SIM_RADAR_ENABLED", "true"):
+        return {"enabled": False, "results": [], "failures": []}
+
+    now = datetime.now(BEIJING_TZ)
+    expiry = next_option_expiry(now)
+    days_to_expiry = max((expiry.date() - now.date()).days, 1)
+    results = []
+    failures = []
+
+    for code in load_option_etf_watchlist():
+        try:
+            quote = fetch_quote(code)
+            if not quote.price:
+                raise ValueError("missing ETF price")
+            strike = nearest_option_strike(quote.price)
+            for direction in ("认购", "认沽"):
+                premium = estimate_option_premium(quote.price, days_to_expiry, direction)
+                break_even = strike + premium if direction == "认购" else strike - premium
+                if quote.pct_change is None:
+                    suitability = "只观察：缺少当日涨跌幅"
+                elif direction == "认购" and 0.4 <= quote.pct_change <= 3.5:
+                    suitability = "可模拟认购：方向偏强，但只用仿真盘验证"
+                elif direction == "认沽" and quote.pct_change <= -0.8:
+                    suitability = "可模拟认沽：方向偏弱，但只用仿真盘验证"
+                else:
+                    suitability = "不适合主动模拟：方向或赔率不清晰"
+                results.append(
+                    {
+                        "code": code,
+                        "name": quote.name,
+                        "etf_price": quote.price,
+                        "pct_change": quote.pct_change,
+                        "direction": direction,
+                        "strike": strike,
+                        "expiry": expiry.strftime("%Y-%m-%d"),
+                        "days_to_expiry": days_to_expiry,
+                        "premium": premium,
+                        "contract_cost": premium * 10000,
+                        "break_even": break_even,
+                        "max_loss": premium * 10000,
+                        "time_risk": option_time_risk(days_to_expiry, premium),
+                        "suitability": suitability,
+                        "scenarios": [
+                            option_payoff(quote.price, strike, premium, direction, move)
+                            for move in (-3, -2, -1, 1, 2, 3)
+                        ],
+                        "quote_note": "权利金为模拟估算，不是真实期权链报价；接入银河仿真盘后再替换为真实权利金/隐含波动率/希腊值。",
+                    }
+                )
+        except Exception as exc:
+            logger.warning("option sim ETF %s skipped: %s", code, exc)
+            failures.append({"code": code, "error": str(exc)})
+
+    return {
+        "enabled": True,
+        "watch_count": len(load_option_etf_watchlist()),
+        "expiry": expiry.strftime("%Y-%m-%d"),
+        "days_to_expiry": days_to_expiry,
+        "contract_multiplier": 10000,
+        "results": results,
+        "failures": failures,
+    }
+
+
 def fetch_realtime_quote(code: str) -> Quote:
     """Fetch a lightweight quote without moving averages for wider stock scans."""
     data = eastmoney_get(
@@ -307,11 +441,26 @@ def fetch_realtime_quote(code: str) -> Quote:
 
 
 def market_scan_allowed_prefixes() -> tuple:
-    raw = os.getenv("BROAD_MARKET_ALLOWED_PREFIXES", "000,001,002,600,601,603,605")
+    raw = os.getenv(
+        "BROAD_MARKET_ALLOWED_PREFIXES",
+        "000,001,002,003,300,301,600,601,603,605,688,689,830,831,832,833,834,835,836,837,838,839,870,871,872,873,920",
+    )
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
-def is_tradeable_main_board_code(code: str, name: str) -> bool:
+def board_label(code: str) -> str:
+    if code.startswith(("300", "301")):
+        return "创业板"
+    if code.startswith(("688", "689")):
+        return "科创板"
+    if code.startswith(("8", "920")):
+        return "北交所"
+    if code.startswith(("000", "001", "002", "003", "600", "601", "603", "605")):
+        return "沪深主板"
+    return "其他"
+
+
+def is_tradeable_a_share_code(code: str, name: str) -> bool:
     if not code.startswith(market_scan_allowed_prefixes()):
         return False
     blocked_name_tokens = ("ST", "*ST", "退", "N", "C")
@@ -353,7 +502,7 @@ def layer_index_from_watchlist(watchlist: Dict) -> Dict[str, List[str]]:
 def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> Optional[Dict]:
     code = str(row.get("f12") or "").strip()
     name = str(row.get("f14") or code).strip()
-    if not code or not is_tradeable_main_board_code(code, name):
+    if not code or not is_tradeable_a_share_code(code, name):
         return None
 
     price = safe_float(row.get("f2"))
@@ -364,6 +513,7 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
     open_price = safe_float(row.get("f17"))
     prev_close = safe_float(row.get("f18"))
     industry = str(row.get("f100") or "").strip()
+    board = board_label(code)
 
     if price is None or pct is None or amount is None:
         return None
@@ -448,6 +598,7 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
     return {
         "code": code,
         "name": name,
+        "board": board,
         "price": price,
         "pct_change": pct,
         "amount": amount,
@@ -672,6 +823,27 @@ def combined_watchlist() -> List[str]:
     return codes
 
 
+def coverage_report(watchlist: List[str], stock_radar: Dict, broad_market_scan: Dict, option_sim_radar: Dict) -> Dict:
+    max_pages = int(os.getenv("BROAD_MARKET_MAX_PAGES", "28"))
+    page_size = int(os.getenv("BROAD_MARKET_PAGE_SIZE", "200"))
+    allowed_prefixes = list(market_scan_allowed_prefixes())
+    return {
+        "etf_watch_count": len(watchlist),
+        "etf_watchlist": watchlist,
+        "option_etf_watchlist": load_option_etf_watchlist(),
+        "option_rows": len(option_sim_radar.get("results", [])),
+        "ai_stock_watch_count": stock_radar.get("watch_count", 0),
+        "broad_scan_enabled": broad_market_scan.get("enabled", False),
+        "broad_scan_pages_budget": max_pages,
+        "broad_scan_page_size": page_size,
+        "broad_scan_capacity": max_pages * page_size,
+        "broad_rows_seen": broad_market_scan.get("scanned_count", 0),
+        "broad_candidates": broad_market_scan.get("candidate_count", 0),
+        "allowed_prefixes": allowed_prefixes,
+        "coverage_note": "ETF为重点监控池；A股扫描覆盖沪深主板、创业板、科创板、北交所常见代码前缀，并过滤ST/新股/退市风险；创业板/科创板/北交所只做观察提示，默认不直接下单。",
+    }
+
+
 def position_map(portfolio: Dict) -> Dict[str, Dict]:
     return {str(item.get("code")): item for item in portfolio.get("positions", [])}
 
@@ -828,7 +1000,11 @@ def broad_market_tiers(results: List[Dict], portfolio: Optional[Dict] = None) ->
         if float(item.get("score") or 0) < action_min_score:
             continue
         action_item = dict(item)
-        if item.get("theme_layers"):
+        board = item.get("board") or board_label(str(item.get("code", "")))
+        if board != "沪深主板":
+            action_item["action"] = f"{board}观察，先确认权限和20cm波动风险"
+            reason_prefix = f"已扫描到{board}标的，但当前只作为全市场观察，不直接纳入默认下单池"
+        elif item.get("theme_layers"):
             action_item["action"] = "主线可操作候选，限9:40二次确认后小仓"
             reason_prefix = "通过主线短线过滤：命中主题层，且涨幅不过热、成交额够、量比放大、换手未失控"
         else:
@@ -1128,6 +1304,8 @@ def run_radar() -> Dict:
     for item in stock_radar.get("results", []):
         item["trade_plan"] = short_term_trade_plan(item, portfolio)
     broad_market_scan = run_broad_market_scan(load_digital_infra_watchlist())
+    option_sim_radar = run_option_sim_radar()
+    coverage = coverage_report(watchlist, stock_radar, broad_market_scan, option_sim_radar)
 
     now = datetime.now(BEIJING_TZ)
     return {
@@ -1139,6 +1317,8 @@ def run_radar() -> Dict:
         "failures": failures,
         "stock_radar": stock_radar,
         "broad_market_scan": broad_market_scan,
+        "option_sim_radar": option_sim_radar,
+        "coverage": coverage,
     }
 
 
@@ -1428,6 +1608,59 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
             )
         )
 
+    option_radar = report.get("option_sim_radar", {})
+    option_results = option_radar.get("results", [])
+    if option_radar.get("enabled") and option_results:
+        lines.extend(
+            [
+                "",
+                "## 期权模拟雷达",
+                "",
+                f"- 标的 ETF：{' / '.join(load_option_etf_watchlist())}",
+                f"- 合约乘数：{option_radar.get('contract_multiplier', 10000)} 份ETF/张；估算到期日：{option_radar.get('expiry')}；剩余约 {option_radar.get('days_to_expiry')} 天。",
+                "- 说明：权利金为模拟估算，不是真实期权链报价；接入银河仿真盘后再替换为真实权利金、隐含波动率、Delta、Theta。",
+                "- 纪律：只做模拟盘；先买方，不裸卖；单笔模拟权利金先按500-1500元练，不为了日入3000倒推杠杆。",
+                "",
+                "| ETF | 方向 | 行权价 | 到期日 | 权利金估算 | 盈亏平衡点 | 最大亏损/张 | ETF涨跌情景盈亏 | 时间价值风险 | 今日是否适合模拟 |",
+                "| --- | --- | ---: | --- | ---: | ---: | ---: | --- | --- | --- |",
+            ]
+        )
+        for item in option_results:
+            scenario_text = "；".join(
+                f"{scenario.get('move_pct'):+.0f}%:{yuan(scenario.get('profit'))}"
+                for scenario in item.get("scenarios", [])
+            )
+            lines.append(
+                "| {code} {name} | {direction} | {strike} | {expiry} | {premium} | {break_even} | {max_loss} | {scenarios} | {time_risk} | {suitability} |".format(
+                    code=markdown_escape(item.get("code")),
+                    name=markdown_escape(item.get("name")),
+                    direction=markdown_escape(item.get("direction")),
+                    strike=fmt(item.get("strike"), decimals=3),
+                    expiry=markdown_escape(item.get("expiry")),
+                    premium=fmt(item.get("premium"), decimals=4),
+                    break_even=fmt(item.get("break_even"), decimals=4),
+                    max_loss=yuan(item.get("max_loss")),
+                    scenarios=markdown_escape(scenario_text),
+                    time_risk=markdown_escape(item.get("time_risk")),
+                    suitability=markdown_escape(item.get("suitability")),
+                )
+            )
+
+    coverage = report.get("coverage", {})
+    if coverage:
+        lines.extend(
+            [
+                "",
+                "## 覆盖检查",
+                "",
+                f"- ETF重点监控：{coverage.get('etf_watch_count', 0)} 只；代码：{' / '.join(coverage.get('etf_watchlist', []))}",
+                f"- 期权ETF模拟：{' / '.join(coverage.get('option_etf_watchlist', []))}；生成 {coverage.get('option_rows', 0)} 行认购/认沽情景。",
+                f"- AI主题个股池：{coverage.get('ai_stock_watch_count', 0)} 只。",
+                f"- A股全市场扫描：本次读取 {coverage.get('broad_rows_seen', 0)} 行；过滤后候选 {coverage.get('broad_candidates', 0)} 只；扫描容量预算 {coverage.get('broad_scan_capacity', 0)} 行。",
+                f"- 覆盖说明：{coverage.get('coverage_note', '')}",
+            ]
+        )
+
     stock_radar = report.get("stock_radar", {})
     stock_results = stock_radar.get("results", [])
     if stock_radar.get("enabled") and stock_results:
@@ -1592,6 +1825,8 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
         "results": report.get("results", []),
         "stock_radar": report.get("stock_radar", {}),
         "broad_market_scan": report.get("broad_market_scan", {}),
+        "option_sim_radar": report.get("option_sim_radar", {}),
+        "coverage": report.get("coverage", {}),
         "failures": report.get("failures", []),
         "ai_summary": report.get("ai_summary", ""),
     }
@@ -1692,6 +1927,77 @@ def generate_html_email(report: Dict) -> str:
             </tr>
             {''.join(stock_rows)}
         </table>
+        """
+
+    option_radar = report.get("option_sim_radar", {})
+    option_rows = []
+    for item in option_radar.get("results", []):
+        scenario_text = "<br>".join(
+            f"{scenario.get('move_pct'):+.0f}%：{yuan(scenario.get('profit'))}"
+            for scenario in item.get("scenarios", [])
+        )
+        option_rows.append(
+            f"""
+            <tr>
+                <td><strong>{html.escape(item.get('code', ''))}</strong><br>{html.escape(item.get('name', ''))}</td>
+                <td>{html.escape(item.get('direction', ''))}</td>
+                <td>{fmt(item.get('strike'), decimals=3)}</td>
+                <td>{html.escape(str(item.get('expiry', '')))}<br>{html.escape(str(item.get('days_to_expiry', '')))}天</td>
+                <td>{fmt(item.get('premium'), decimals=4)}<br>{yuan(item.get('contract_cost'))}/张</td>
+                <td>{fmt(item.get('break_even'), decimals=4)}</td>
+                <td>{yuan(item.get('max_loss'))}</td>
+                <td>{scenario_text}</td>
+                <td>{html.escape(item.get('time_risk', ''))}</td>
+                <td>{html.escape(item.get('suitability', ''))}</td>
+            </tr>
+            """
+        )
+
+    option_html = ""
+    if option_rows:
+        option_html = f"""
+        <h3>期权模拟雷达</h3>
+        <div class="sub">
+            标的 ETF：{html.escape(' / '.join(load_option_etf_watchlist()))}。
+            合约乘数：{html.escape(str(option_radar.get('contract_multiplier', 10000)))} 份ETF/张；
+            估算到期日：{html.escape(str(option_radar.get('expiry', '')))}；
+            剩余约 {html.escape(str(option_radar.get('days_to_expiry', '')))} 天。<br>
+            权利金为模拟估算，不是真实期权链报价；接入银河仿真盘后再替换为真实权利金、隐含波动率、Delta、Theta。
+            只做模拟盘；先买方，不裸卖；单笔模拟权利金先按500-1500元练。
+        </div>
+        <table>
+            <tr>
+                <th>ETF</th>
+                <th>方向</th>
+                <th>行权价</th>
+                <th>到期日</th>
+                <th>权利金</th>
+                <th>盈亏平衡点</th>
+                <th>最大亏损</th>
+                <th>ETF涨跌情景盈亏</th>
+                <th>时间价值风险</th>
+                <th>是否适合今天模拟</th>
+            </tr>
+            {''.join(option_rows)}
+        </table>
+        """
+
+    coverage = report.get("coverage", {})
+    coverage_html = ""
+    if coverage:
+        coverage_html = f"""
+        <div class="note" style="background:#f6f8fa; border-left-color:#57606a;">
+            <strong>覆盖检查</strong><br>
+            ETF重点监控：{html.escape(str(coverage.get('etf_watch_count', 0)))} 只；
+            代码：{html.escape(' / '.join(coverage.get('etf_watchlist', [])))}<br>
+            期权ETF模拟：{html.escape(' / '.join(coverage.get('option_etf_watchlist', [])))}；
+            生成 {html.escape(str(coverage.get('option_rows', 0)))} 行认购/认沽情景。<br>
+            AI主题个股池：{html.escape(str(coverage.get('ai_stock_watch_count', 0)))} 只。<br>
+            A股全市场扫描：本次读取 {html.escape(str(coverage.get('broad_rows_seen', 0)))} 行；
+            过滤后候选 {html.escape(str(coverage.get('broad_candidates', 0)))} 只；
+            扫描容量预算 {html.escape(str(coverage.get('broad_scan_capacity', 0)))} 行。<br>
+            {html.escape(str(coverage.get('coverage_note', '')))}
+        </div>
         """
 
     broad_scan = report.get("broad_market_scan", {})
@@ -1865,6 +2171,8 @@ def generate_html_email(report: Dict) -> str:
                 </tr>
                 {''.join(rows)}
             </table>
+            {option_html}
+            {coverage_html}
             {stock_html}
             {broad_html}
             {ai_html}
