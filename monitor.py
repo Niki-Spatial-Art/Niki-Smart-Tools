@@ -792,6 +792,8 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
     prev_close = safe_float(row.get("f18"))
     industry = str(row.get("f100") or "").strip()
     board = board_label(code)
+    data_source = str(row.get("_source") or row.get("source") or "unknown").strip().lower()
+    data_quality = "full" if volume_ratio is not None and turnover is not None and industry else "partial"
 
     if price is None or pct is None or amount is None:
         return None
@@ -872,6 +874,8 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         reasons.append("未命中当前AI/数字基建主线，降级为全市场异动")
     if industry:
         reasons.append(f"行业：{industry}")
+    if data_quality != "full":
+        reasons.append("备用源字段不完整：只进观察池，不直接进入今日可操作池")
 
     return {
         "code": code,
@@ -885,6 +889,8 @@ def classify_market_candidate(row: Dict, layer_index: Dict[str, List[str]]) -> O
         "intraday_pct": intraday_pct,
         "industry": industry,
         "theme_layers": theme_layers,
+        "data_source": data_source,
+        "data_quality": data_quality,
         "score": score,
         "action": "候选，等回踩/二次确认",
         "reasons": reasons,
@@ -920,7 +926,9 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
                 break
             total_rows_seen += len(rows)
             for row in rows:
-                item = classify_market_candidate(row, layer_index)
+                row_with_source = dict(row)
+                row_with_source["_source"] = source
+                item = classify_market_candidate(row_with_source, layer_index)
                 if not item or item["code"] in seen_codes:
                     continue
                 seen_codes.add(item["code"])
@@ -1280,6 +1288,8 @@ def broad_market_tiers(results: List[Dict], portfolio: Optional[Dict] = None) ->
         amount = item.get("amount")
         volume_ratio = item.get("volume_ratio")
         turnover = item.get("turnover")
+        if item.get("data_quality") != "full":
+            continue
         if pct is None or amount is None or volume_ratio is None or turnover is None:
             continue
         if amount < action_min_amount:
@@ -2169,6 +2179,7 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
         bucket_text,
         f"- 时间：{window_text}",
         "- 硬规则：9:10只看预案，9:40以后才允许小仓试单；错过第一波不是错误，追高才是错误。",
+        "- A股T+1：今天买入的个股当天不能卖；每笔买入前先写好下一交易日的止盈/止损计划。",
     ]
 
 
@@ -2218,6 +2229,9 @@ def short_term_pilot_html(portfolio: Dict) -> str:
     )
     hard_rules = pilot.get("hard_rules") or []
     hard_rule_html = "<br>".join(html.escape(str(rule)) for rule in hard_rules)
+    if hard_rule_html:
+        hard_rule_html += "<br>"
+    hard_rule_html += "A股T+1：今天买入的个股当天不能卖；每笔买入前先写好下一交易日的止盈/止损计划。"
     bucket_html = ""
     if pilot.get("estimated_bucket_profit_if_3pct") is not None:
         bucket_html = (

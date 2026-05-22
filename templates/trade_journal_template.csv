@@ -1,0 +1,1 @@
+plan_id,date,generated_at,code,name,decision,grade,window,planned_capital,planned_shares,entry_low,entry_high,take_profit_1,take_profit_2,stop_loss,risk_gate,reason,t_plus_one_plan,actual_entry_time,actual_entry_price,actual_shares,actual_exit_time,actual_exit_price,pnl,pnl_pct,outcome,review

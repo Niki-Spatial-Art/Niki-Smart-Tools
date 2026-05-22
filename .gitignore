@@ -5,6 +5,8 @@ __pycache__/
 .env.local
 logs/
 reports/
+data/paper_trade_journal.csv
+data/trade_journal.csv
 .DS_Store
 *.egg-info/
 dist/
