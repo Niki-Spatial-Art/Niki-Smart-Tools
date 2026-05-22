@@ -60,15 +60,20 @@ $catchupTriggers = @(
     (New-ScheduledTaskTrigger -AtLogOn)
 )
 
-Register-ScheduledTask `
-    -TaskName "ETF Strategy Monitor Catchup" `
-    -Action $catchupAction `
-    -Trigger $catchupTriggers `
-    -Settings $settings `
-    -Description "Check whether today's ETF Strategy Monitor email was sent; if not, run it once." `
-    -Force | Out-Null
+try {
+    Register-ScheduledTask `
+        -TaskName "ETF Strategy Monitor Catchup" `
+        -Action $catchupAction `
+        -Trigger $catchupTriggers `
+        -Settings $settings `
+        -Description "Check whether today's ETF Strategy Monitor email was sent; if not, run it once." `
+        -Force | Out-Null
 
-Write-Host "Installed Windows scheduled task: ETF Strategy Monitor Catchup"
+    Write-Host "Installed Windows scheduled task: ETF Strategy Monitor Catchup"
+}
+catch {
+    Write-Warning "Could not install combined catchup task. Use install_windows_tasks_schtasks.ps1 instead, or run PowerShell as Administrator for logon catchup. Error: $($_.Exception.Message)"
+}
 
 Write-Host "Runner: $runner"
 Write-Host "Catchup runner: $catchupRunner"

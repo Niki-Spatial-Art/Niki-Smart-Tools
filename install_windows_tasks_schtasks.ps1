@@ -42,9 +42,11 @@ Write-Host "Installed: ETF Strategy Monitor Catchup 0925"
 
 & schtasks.exe /Create /F /SC ONLOGON /TN "ETF Strategy Monitor Catchup Logon" /TR $catchupCommand | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to install scheduled task: ETF Strategy Monitor Catchup Logon"
+    Write-Warning "Could not install logon catchup task. The 09:25 catchup task is already installed; run this script as Administrator if you also want logon catchup."
 }
-Write-Host "Installed: ETF Strategy Monitor Catchup Logon"
+else {
+    Write-Host "Installed: ETF Strategy Monitor Catchup Logon"
+}
 
 Write-Host "Runner: $runner"
 Write-Host "Catchup runner: $catchupRunner"
