@@ -1247,6 +1247,240 @@ def display_stock_results(results: List[Dict]) -> List[Dict]:
     return selected[:max_rows]
 
 
+def round_lot_shares(capital: Optional[float], price: Optional[float], lot_size: int) -> int:
+    if not capital or not price or price <= 0:
+        return 0
+    lots = int(float(capital) // (float(price) * lot_size))
+    return max(lots * lot_size, 0)
+
+
+def xingyao_status_text(option_radar: Dict) -> str:
+    if option_radar.get("xingyao_enabled") and option_radar.get("xingyao_contract_count", 0):
+        return f"星耀已接入：读取到 {option_radar.get('xingyao_contract_count', 0)} 条期权基础合约。"
+    error = option_radar.get("xingyao_error") or "未启用"
+    if error == "disabled":
+        return "星耀未启用：本次邮件仍用模拟权利金，不是真实期权链。"
+    if error == "missing credentials":
+        return "星耀未启用：缺少账号或密码环境变量。"
+    return f"星耀未接入成功：{error}；本次仍用模拟权利金。"
+
+
+def short_term_action_cards(report: Dict) -> List[Dict]:
+    portfolio = report.get("portfolio", {})
+    pilot = short_term_pilot_policy(portfolio)
+    broad_scan = report.get("broad_market_scan", {})
+    tiers = broad_market_tiers(broad_scan.get("results", []), portfolio)
+    default_capital = float(pilot.get("capital_per_stock") or 0)
+    target_profit_pct = float(pilot.get("target_profit_pct") or 0.03)
+    stop_loss_pct = float(pilot.get("stop_loss_pct") or 0.03)
+    no_chase_pct = float(pilot.get("no_chase_pct") or 5.2)
+    cards = []
+
+    for item in tiers.get("actionable", []):
+        code = str(item.get("code") or "")
+        price = safe_float(item.get("price"))
+        pct = safe_float(item.get("pct_change"))
+        lot_size = minimum_lot_size(code)
+        board = item.get("board") or board_label(code)
+        is_default_board = board == "沪深主板"
+        is_theme = bool(item.get("theme_layers"))
+        can_do = bool(is_default_board and is_theme and price and pct is not None and pct < no_chase_pct)
+        capital = default_capital if can_do else 0
+        shares = round_lot_shares(capital, price, lot_size)
+        entry_low = price * 0.995 if price else None
+        entry_high = price * 1.005 if price else None
+        take_profit_1 = price * (1 + target_profit_pct) if price else None
+        take_profit_2 = price * (1 + min(target_profit_pct + 0.02, 0.05)) if price else None
+        stop_loss = price * (1 - stop_loss_pct) if price else None
+        if can_do:
+            decision = "做"
+            action = (
+                f"B级试单，最多{yuan(capital)}，约{shares}股；"
+                f"只在9:40/10:45确认后执行，不追高。"
+            )
+        else:
+            decision = "不做"
+            if board != "沪深主板":
+                action = f"{board}波动和权限风险更高，今天只观察。"
+            elif not is_theme:
+                action = "未命中当前主线，今天只观察。"
+            else:
+                action = "涨幅接近追高区，等回踩，不主动开仓。"
+        cards.append(
+            {
+                "decision": decision,
+                "code": code,
+                "name": item.get("name"),
+                "price": price,
+                "pct_change": pct,
+                "capital": capital,
+                "shares": shares,
+                "entry_low": entry_low,
+                "entry_high": entry_high,
+                "take_profit_1": take_profit_1,
+                "take_profit_2": take_profit_2,
+                "stop_loss": stop_loss,
+                "action": action,
+                "reason": "；".join(item.get("reasons", [])[:3]),
+            }
+        )
+
+    return cards
+
+
+def option_beginner_cards(option_radar: Dict) -> List[Dict]:
+    cards = []
+    for item in option_radar.get("results", []):
+        suitability = str(item.get("suitability") or "")
+        can_sim = "可模拟" in suitability
+        max_loss = safe_float(item.get("max_loss"))
+        premium = safe_float(item.get("premium"))
+        if can_sim and max_loss is not None and 100 <= max_loss <= 1500:
+            decision = "只仿真"
+            action = f"仿真买入1张{item.get('direction')}，最大亏损约{yuan(max_loss)}；当天不做实盘。"
+        else:
+            decision = "不做"
+            action = "方向或赔率不清晰；小白阶段不要为了日目标硬做。"
+        cards.append(
+            {
+                "decision": decision,
+                "code": item.get("code"),
+                "name": item.get("name"),
+                "direction": item.get("direction"),
+                "strike": item.get("strike"),
+                "premium": premium,
+                "contract_cost": item.get("contract_cost"),
+                "break_even": item.get("break_even"),
+                "max_loss": max_loss,
+                "action": action,
+                "suitability": suitability,
+            }
+        )
+    return cards
+
+
+def action_plan_markdown_lines(report: Dict) -> List[str]:
+    portfolio = report.get("portfolio", {})
+    pilot = short_term_pilot_policy(portfolio)
+    stock_cards = short_term_action_cards(report)
+    do_cards = [item for item in stock_cards if item["decision"] == "做"]
+    option_radar = report.get("option_sim_radar", {})
+    option_cards = option_beginner_cards(option_radar)
+    option_do_cards = [item for item in option_cards if item["decision"] == "只仿真"]
+
+    lines = ["", "## 今日动作卡", ""]
+    if do_cards:
+        first = do_cards[0]
+        lines.extend(
+            [
+                f"- 短线结论：今天只做 1 只，优先 {first['code']} {first['name']}；默认不把 {yuan(pilot.get('max_total_capital'))} 打满。",
+                f"- 买入纪律：最多 {yuan(first['capital'])}，约 {first['shares']} 股；参考区间 {fmt(first['entry_low'])}-{fmt(first['entry_high'])}，必须等9:40/10:45确认。",
+                f"- 卖出纪律：第一档 {fmt(first['take_profit_1'])} 附近先落袋一半；第二档 {fmt(first['take_profit_2'])} 附近看承接处理剩余。",
+                f"- 止损纪律：跌破 {fmt(first['stop_loss'])} 且收不回，承认试错失败，不补仓摊低。",
+            ]
+        )
+    else:
+        lines.append("- 短线结论：今天没有默认可做标的；空手比硬做更重要。")
+
+    if stock_cards:
+        lines.extend(["", "| 标的 | 做/不做 | 买多少 | 买入区 | 止盈 | 止损 | 小白解释 |", "| --- | --- | ---: | --- | --- | --- | --- |"])
+        for item in stock_cards[:6]:
+            lines.append(
+                "| {code} {name} | {decision} | {capital} / {shares}股 | {entry_low}-{entry_high} | {tp1}/{tp2} | {stop} | {action} |".format(
+                    code=markdown_escape(item.get("code")),
+                    name=markdown_escape(item.get("name")),
+                    decision=markdown_escape(item.get("decision")),
+                    capital=yuan(item.get("capital")),
+                    shares=item.get("shares", 0),
+                    entry_low=fmt(item.get("entry_low")),
+                    entry_high=fmt(item.get("entry_high")),
+                    tp1=fmt(item.get("take_profit_1")),
+                    tp2=fmt(item.get("take_profit_2")),
+                    stop=fmt(item.get("stop_loss")),
+                    action=markdown_escape(item.get("action")),
+                )
+            )
+
+    lines.extend(["", "### 期权/期货类小白版", ""])
+    lines.append(f"- {xingyao_status_text(option_radar)}")
+    lines.append("- 期货模块当前没有接入实盘数据；今天不做期货实盘。")
+    if option_do_cards:
+        first_option = option_do_cards[0]
+        lines.append(
+            f"- 期权只做仿真：优先观察 {first_option.get('code')} {first_option.get('direction')}，1张以内，最大亏损约 {yuan(first_option.get('max_loss'))}。"
+        )
+    else:
+        lines.append("- 期权结论：今天没有必须模拟的合约；看不懂就不做。")
+    return lines
+
+
+def action_plan_html(report: Dict) -> str:
+    stock_cards = short_term_action_cards(report)
+    option_radar = report.get("option_sim_radar", {})
+    option_cards = option_beginner_cards(option_radar)
+    do_cards = [item for item in stock_cards if item["decision"] == "做"]
+    option_do_cards = [item for item in option_cards if item["decision"] == "只仿真"]
+
+    if do_cards:
+        first = do_cards[0]
+        summary = (
+            f"今天只做 1 只：{html.escape(str(first.get('code')))} {html.escape(str(first.get('name')))}。"
+            f"最多 {yuan(first.get('capital'))}，约 {html.escape(str(first.get('shares')))} 股；"
+            f"止盈看 {fmt(first.get('take_profit_1'))}/{fmt(first.get('take_profit_2'))}，"
+            f"止损看 {fmt(first.get('stop_loss'))}。"
+        )
+    else:
+        summary = "今天没有默认可做标的；空手比硬做更重要。"
+
+    stock_rows = []
+    for item in stock_cards[:6]:
+        color = "#1a7f37" if item.get("decision") == "做" else "#d1242f"
+        stock_rows.append(
+            f"""
+            <tr>
+                <td><strong>{html.escape(str(item.get('code')))}</strong><br>{html.escape(str(item.get('name')))}</td>
+                <td><strong style="color:{color};">{html.escape(str(item.get('decision')))}</strong></td>
+                <td>{yuan(item.get('capital'))}<br>{html.escape(str(item.get('shares')))}股</td>
+                <td>{fmt(item.get('entry_low'))}-{fmt(item.get('entry_high'))}</td>
+                <td>{fmt(item.get('take_profit_1'))}<br>{fmt(item.get('take_profit_2'))}</td>
+                <td>{fmt(item.get('stop_loss'))}</td>
+                <td>{html.escape(str(item.get('action')))}</td>
+            </tr>
+            """
+        )
+
+    option_line = "期权结论：今天没有必须模拟的合约；看不懂就不做。"
+    if option_do_cards:
+        first_option = option_do_cards[0]
+        option_line = (
+            f"期权只做仿真：{html.escape(str(first_option.get('code')))} "
+            f"{html.escape(str(first_option.get('direction')))}，1张以内，"
+            f"最大亏损约 {yuan(first_option.get('max_loss'))}。"
+        )
+
+    return f"""
+    <div class="note" style="background:#fff8c5; border-left-color:#bf8700;">
+        <h3 style="margin-top:0;">今日动作卡</h3>
+        <strong>{summary}</strong><br>
+        <span class="sub">这是把雷达翻译成可执行纪律：做/不做、买多少、哪里卖、哪里止损。</span>
+        <table>
+            <tr>
+                <th>标的</th>
+                <th>做/不做</th>
+                <th>买多少</th>
+                <th>买入区</th>
+                <th>止盈</th>
+                <th>止损</th>
+                <th>小白解释</th>
+            </tr>
+            {''.join(stock_rows) if stock_rows else '<tr><td>--</td><td>不做</td><td>--</td><td>--</td><td>--</td><td>--</td><td>今日无合格短线动作。</td></tr>'}
+        </table>
+        <p><strong>星耀状态：</strong>{html.escape(xingyao_status_text(option_radar))}</p>
+        <p><strong>期权/期货类：</strong>{option_line} 期货模块当前没有接入实盘数据，今天不做期货实盘。</p>
+    </div>
+    """
+
+
 def yuan(value: Optional[float]) -> str:
     if value is None:
         return "--"
@@ -1676,6 +1910,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
         *capital_plan_summary_lines(portfolio),
         *short_term_pilot_summary_lines(portfolio),
+        *action_plan_markdown_lines(report),
         "",
         "## 雷达结果",
         "",
@@ -2278,6 +2513,7 @@ def generate_html_email(report: Dict) -> str:
             </div>
             {capital_plan_html(report.get('portfolio', {}))}
             {short_term_pilot_html(report.get('portfolio', {}))}
+            {action_plan_html(report)}
             <table>
                 <tr>
                     <th>标的</th>
