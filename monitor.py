@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -256,11 +257,41 @@ def fetch_quote_sina(code: str) -> Quote:
     )
 
 
+def fetch_quote_yahoo(code: str) -> Quote:
+    suffix = ".SS" if market_prefix(code) == "1" else ".SZ"
+    response = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}",
+        params={"range": "5d", "interval": "1d"},
+        headers={"User-Agent": "Mozilla/5.0 ETF Strategy Monitor"},
+        timeout=12,
+    )
+    response.raise_for_status()
+    result = ((response.json().get("chart") or {}).get("result") or [None])[0] or {}
+    meta = result.get("meta") or {}
+    price = safe_float(meta.get("regularMarketPrice"))
+    prev_close = safe_float(meta.get("previousClose"))
+    pct_change = ((price - prev_close) / prev_close * 100) if price and prev_close else None
+    volume = safe_float(meta.get("regularMarketVolume"))
+    amount = price * volume if price is not None and volume is not None else None
+    ma20, ma60 = fetch_moving_averages(code)
+
+    return Quote(
+        code=code,
+        name=meta.get("symbol") or code,
+        price=price,
+        pct_change=pct_change,
+        amount=amount,
+        ma20=ma20,
+        ma60=ma60,
+    )
+
+
 def fetch_quote(code: str) -> Quote:
     sources = [
         ("eastmoney", fetch_quote_eastmoney),
         ("tencent", fetch_quote_tencent),
         ("sina", fetch_quote_sina),
+        ("yahoo", fetch_quote_yahoo),
     ]
     errors = []
     for source_name, fetcher in sources:
@@ -655,6 +686,86 @@ def fetch_market_snapshot_page(page: int, page_size: int = 100) -> List[Dict]:
     return data.get("diff") or []
 
 
+def sina_market_node() -> str:
+    return os.getenv("SINA_MARKET_NODE", "hs_a").strip() or "hs_a"
+
+
+def parse_sina_market_rows(text: str) -> List[Dict]:
+    rows = []
+    for match in re.finditer(r"\{([^{}]+)\}", text or ""):
+        raw = match.group(1)
+        values = {}
+        for item in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*):(?:\"([^\"]*)\"|([^,}]+))", raw):
+            key = item.group(1)
+            value = item.group(2) if item.group(2) is not None else item.group(3)
+            values[key] = str(value).strip()
+
+        symbol = values.get("symbol") or ""
+        code = values.get("code") or symbol[-6:]
+        if not code or len(code) != 6:
+            continue
+
+        rows.append(
+            {
+                "f12": code,
+                "f14": values.get("name") or code,
+                "f2": values.get("trade") or values.get("price"),
+                "f3": values.get("changepercent"),
+                "f6": values.get("amount"),
+                "f8": values.get("turnoverratio"),
+                "f10": None,
+                "f17": values.get("open"),
+                "f18": values.get("settlement"),
+                "f100": values.get("industry") or "",
+                "source": "sina",
+            }
+        )
+    return rows
+
+
+def fetch_market_snapshot_page_sina(page: int, page_size: int = 100) -> List[Dict]:
+    response = requests.get(
+        "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData",
+        params={
+            "page": page,
+            "num": min(page_size, int(os.getenv("SINA_MARKET_PAGE_SIZE", "80"))),
+            "sort": "amount",
+            "asc": "0",
+            "node": sina_market_node(),
+            "symbol": "",
+            "_s_r_a": "init",
+        },
+        headers={
+            "User-Agent": "Mozilla/5.0 ETF Strategy Monitor",
+            "Referer": "https://vip.stock.finance.sina.com.cn/",
+        },
+        timeout=int(os.getenv("SINA_MARKET_PAGE_TIMEOUT_SECONDS", "8")),
+    )
+    response.raise_for_status()
+    response.encoding = "gbk"
+    return parse_sina_market_rows(response.text)
+
+
+def fetch_market_snapshot_page_with_fallback(page: int, page_size: int = 100) -> tuple:
+    sources = [item.strip().lower() for item in os.getenv("BROAD_MARKET_SOURCES", "eastmoney,sina").split(",") if item.strip()]
+    errors = []
+    for source in sources:
+        try:
+            if source == "eastmoney":
+                rows = fetch_market_snapshot_page(page, page_size)
+            elif source == "sina":
+                rows = fetch_market_snapshot_page_sina(page, page_size)
+            else:
+                errors.append(f"{source}: unsupported broad-market source")
+                continue
+            if rows:
+                return rows, source, errors
+            errors.append(f"{source}: empty page")
+        except Exception as exc:
+            errors.append(f"{source}: {exc}")
+    raise RuntimeError("; ".join(errors) or "all broad-market sources failed")
+
+
 def layer_index_from_watchlist(watchlist: Dict) -> Dict[str, List[str]]:
     index: Dict[str, List[str]] = {}
     for layer in watchlist.get("layers") or []:
@@ -790,6 +901,7 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     layer_index = layer_index_from_watchlist(watchlist)
     candidates = []
     failures = []
+    source_counts = {}
     seen_codes = set()
     total_rows_seen = 0
     started_at = time.monotonic()
@@ -800,7 +912,10 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
             failures.append({"page": page, "error": f"broad market scan time budget reached after {elapsed:.1f}s"})
             break
         try:
-            rows = fetch_market_snapshot_page(page, page_size)
+            rows, source, source_errors = fetch_market_snapshot_page_with_fallback(page, page_size)
+            source_counts[source] = source_counts.get(source, 0) + len(rows)
+            for source_error in source_errors:
+                failures.append({"page": page, "source": "fallback", "error": source_error})
             if not rows:
                 break
             total_rows_seen += len(rows)
@@ -813,15 +928,20 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
         except Exception as exc:
             logger.warning("broad market page %s skipped: %s", page, exc)
             failures.append({"page": page, "error": str(exc)})
-            if len(failures) >= 3:
+            hard_failures = [item for item in failures if item.get("source") != "fallback"]
+            if len(hard_failures) >= 3:
                 break
 
     candidates.sort(key=lambda item: item.get("score", 0), reverse=True)
     max_results = int(os.getenv("BROAD_MARKET_MAX_RESULTS", "50"))
+    capacity = max_pages * page_size
     return {
         "enabled": True,
         "scan_pages": max_pages,
+        "sources": [item.strip() for item in os.getenv("BROAD_MARKET_SOURCES", "eastmoney,sina").split(",") if item.strip()],
+        "source_counts": source_counts,
         "scanned_count": total_rows_seen,
+        "missing_estimate": max(capacity - total_rows_seen, 0),
         "candidate_count": len(seen_codes),
         "results": candidates[:max_results],
         "failures": failures,
@@ -1004,7 +1124,10 @@ def coverage_report(watchlist: List[str], stock_radar: Dict, broad_market_scan: 
         "broad_scan_pages_budget": max_pages,
         "broad_scan_page_size": page_size,
         "broad_scan_capacity": max_pages * page_size,
+        "broad_scan_sources": broad_market_scan.get("sources", []),
+        "broad_source_counts": broad_market_scan.get("source_counts", {}),
         "broad_rows_seen": broad_market_scan.get("scanned_count", 0),
+        "broad_missing_estimate": broad_market_scan.get("missing_estimate", 0),
         "broad_candidates": broad_market_scan.get("candidate_count", 0),
         "allowed_prefixes": allowed_prefixes,
         "coverage_note": "ETF为重点监控池；A股扫描覆盖沪深主板、创业板、科创板、北交所常见代码前缀，并过滤ST/新股/退市风险；创业板/科创板/北交所只做观察提示，默认不直接下单。",
@@ -2233,6 +2356,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
                 f"- 期权ETF模拟：{' / '.join(coverage.get('option_etf_watchlist', []))}；生成 {coverage.get('option_rows', 0)} 行认购/认沽情景。",
                 f"- AI主题个股池：{coverage.get('ai_stock_watch_count', 0)} 只。",
                 f"- A股全市场扫描：本次读取 {coverage.get('broad_rows_seen', 0)} 行；过滤后候选 {coverage.get('broad_candidates', 0)} 只；扫描容量预算 {coverage.get('broad_scan_capacity', 0)} 行。",
+                f"- 数据源轮动：{', '.join(coverage.get('broad_scan_sources', []))}；来源行数 {coverage.get('broad_source_counts', {})}；估算缺口 {coverage.get('broad_missing_estimate', 0)} 行。",
                 f"- 覆盖说明：{coverage.get('coverage_note', '')}",
             ]
         )
@@ -2582,6 +2706,9 @@ def generate_html_email(report: Dict) -> str:
             A股全市场扫描：本次读取 {html.escape(str(coverage.get('broad_rows_seen', 0)))} 行；
             过滤后候选 {html.escape(str(coverage.get('broad_candidates', 0)))} 只；
             扫描容量预算 {html.escape(str(coverage.get('broad_scan_capacity', 0)))} 行。<br>
+            数据源轮动：{html.escape(', '.join(coverage.get('broad_scan_sources', [])))}；
+            来源行数 {html.escape(str(coverage.get('broad_source_counts', {})))}；
+            估算缺口 {html.escape(str(coverage.get('broad_missing_estimate', 0)))} 行。<br>
             {html.escape(str(coverage.get('coverage_note', '')))}
         </div>
         """
