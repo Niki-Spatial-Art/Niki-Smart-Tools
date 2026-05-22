@@ -35,4 +35,10 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          XINGYAO_ENABLED: ${{ secrets.XINGYAO_ENABLED }}
+          XINGYAO_USER: ${{ secrets.XINGYAO_USER }}
+          XINGYAO_PASSWORD: ${{ secrets.XINGYAO_PASSWORD }}
+          XINGYAO_HOST: ${{ secrets.XINGYAO_HOST }}
+          XINGYAO_PORT: ${{ secrets.XINGYAO_PORT }}
+          XINGYAO_SDK_PATHS: ${{ secrets.XINGYAO_SDK_PATHS }}
 

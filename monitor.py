@@ -1143,6 +1143,12 @@ def short_term_policy_sentence(portfolio: Dict) -> str:
     )
 
 
+def short_term_pilot_title(pilot: Dict, now: Optional[datetime] = None) -> str:
+    now = now or datetime.now(BEIJING_TZ)
+    stage = pilot.get("stage") or "每日短线动作卡"
+    return f"{now.strftime('%Y-%m-%d')} {stage}"
+
+
 def daily_risk_gate(portfolio: Dict, pilot: Dict) -> Dict:
     daily_profit = float(portfolio.get("daily_profit") or 0)
     soft_stop = float(pilot.get("daily_loss_soft_stop") or -1200)
@@ -1254,6 +1260,104 @@ def round_lot_shares(capital: Optional[float], price: Optional[float], lot_size:
     return max(lots * lot_size, 0)
 
 
+def layer_resonance_score(item: Dict, all_results: List[Dict]) -> int:
+    layers = item.get("theme_layers") or []
+    if not layers:
+        return 0
+    layer_set = set(layers)
+    peers = [
+        row
+        for row in all_results
+        if layer_set.intersection(set(row.get("theme_layers") or []))
+        and (row.get("pct_change") or 0) >= 1.2
+        and (row.get("amount") or 0) >= 300_000_000
+    ]
+    if len(peers) >= 4 and (item.get("amount") or 0) >= 1_000_000_000:
+        return 3
+    if len(peers) >= 2:
+        return 2
+    return 1
+
+
+def execution_quality_score(item: Dict, pilot: Dict) -> int:
+    score = 0
+    pct = item.get("pct_change")
+    amount = item.get("amount") or 0
+    volume_ratio = item.get("volume_ratio")
+    turnover = item.get("turnover")
+    intraday_pct = item.get("intraday_pct")
+    no_chase_pct = float(pilot.get("no_chase_pct") or 5.2)
+
+    if amount >= float(pilot.get("min_action_amount") or 500_000_000):
+        score += 2
+    if volume_ratio is not None and 1.2 <= volume_ratio <= 4.5:
+        score += 2
+    if turnover is not None and 0.8 <= turnover <= 12:
+        score += 2
+    if pct is not None and 1.2 <= pct < no_chase_pct:
+        score += 2
+    if intraday_pct is not None and intraday_pct >= -0.5:
+        score += 2
+    return min(score, 10)
+
+
+def position_permission_for_item(item: Dict, portfolio: Dict, capital: float) -> Dict:
+    code = str(item.get("code") or "")
+    price = safe_float(item.get("price"))
+    lot_size = minimum_lot_size(code)
+    shares = round_lot_shares(capital, price, lot_size)
+    pilot = short_term_pilot_policy(portfolio)
+    max_total = float(pilot.get("max_total_capital") or 0)
+    max_new_buy = float((portfolio.get("capital_plan") or {}).get("liquidity_deployment_plan", {}).get("stage_1_max_new_buy_per_day") or 0)
+    board = item.get("board") or board_label(code)
+    blocked_reason = ""
+
+    if not price:
+        blocked_reason = "缺少价格，不能下单"
+    elif board != "沪深主板":
+        blocked_reason = f"{board}权限和20cm波动风险更高，默认不纳入实盘动作"
+    elif capital <= 0 or shares <= 0:
+        blocked_reason = "仓位规则不允许开仓"
+    elif max_new_buy and capital > max_new_buy:
+        blocked_reason = f"超过单日新开仓上限 {yuan(max_new_buy)}"
+
+    return {
+        "allowed": blocked_reason == "",
+        "max_capital": capital,
+        "lot_size": lot_size,
+        "estimated_shares": shares,
+        "blocked_reason": blocked_reason,
+        "bucket_after_trade": capital if blocked_reason == "" else 0,
+        "bucket_limit": max_total,
+    }
+
+
+def decision_card_for_item(item: Dict, can_do: bool, capital: float, shares: int, entry_low, entry_high, take_profit_1, take_profit_2, stop_loss) -> Dict:
+    if can_do:
+        return {
+            "decision": "做",
+            "grade": "B",
+            "window": "9:40/10:45/14:40",
+            "entry_range": [entry_low, entry_high],
+            "max_capital": capital,
+            "estimated_shares": shares,
+            "take_profit": [take_profit_1, take_profit_2],
+            "stop_loss": stop_loss,
+            "plain_text": f"B级试单，最多{yuan(capital)}，约{shares}股；只在确认窗口执行，不追高。",
+        }
+    return {
+        "decision": "不做",
+        "grade": "NO_TRADE",
+        "window": "观察",
+        "entry_range": [],
+        "max_capital": 0,
+        "estimated_shares": 0,
+        "take_profit": [],
+        "stop_loss": None,
+        "plain_text": "今天不进入实盘动作；只观察是否进入下一次动作池。",
+    }
+
+
 def xingyao_status_text(option_radar: Dict) -> str:
     if option_radar.get("xingyao_enabled") and option_radar.get("xingyao_contract_count", 0):
         return f"星耀已接入：读取到 {option_radar.get('xingyao_contract_count', 0)} 条期权基础合约。"
@@ -1269,11 +1373,13 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
     portfolio = report.get("portfolio", {})
     pilot = short_term_pilot_policy(portfolio)
     broad_scan = report.get("broad_market_scan", {})
-    tiers = broad_market_tiers(broad_scan.get("results", []), portfolio)
+    broad_results = broad_scan.get("results", [])
+    tiers = broad_market_tiers(broad_results, portfolio)
     default_capital = float(pilot.get("capital_per_stock") or 0)
     target_profit_pct = float(pilot.get("target_profit_pct") or 0.03)
     stop_loss_pct = float(pilot.get("stop_loss_pct") or 0.03)
     no_chase_pct = float(pilot.get("no_chase_pct") or 5.2)
+    risk_gate = daily_risk_gate(portfolio, pilot) if pilot else {"blocked": True, "level": "DISABLED", "reason": "短线试运行未启用"}
     cards = []
 
     for item in tiers.get("actionable", []):
@@ -1284,7 +1390,18 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
         board = item.get("board") or board_label(code)
         is_default_board = board == "沪深主板"
         is_theme = bool(item.get("theme_layers"))
-        can_do = bool(is_default_board and is_theme and price and pct is not None and pct < no_chase_pct)
+        layer_score = layer_resonance_score(item, broad_results)
+        execution_score = execution_quality_score(item, pilot)
+        can_do = bool(
+            is_default_board
+            and is_theme
+            and price
+            and pct is not None
+            and pct < no_chase_pct
+            and layer_score >= 2
+            and execution_score >= 7
+            and not risk_gate.get("blocked")
+        )
         capital = default_capital if can_do else 0
         shares = round_lot_shares(capital, price, lot_size)
         entry_low = price * 0.995 if price else None
@@ -1292,18 +1409,33 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
         take_profit_1 = price * (1 + target_profit_pct) if price else None
         take_profit_2 = price * (1 + min(target_profit_pct + 0.02, 0.05)) if price else None
         stop_loss = price * (1 - stop_loss_pct) if price else None
+        position_permission = position_permission_for_item(item, portfolio, capital)
+        decision_card = decision_card_for_item(
+            item,
+            can_do,
+            capital,
+            shares,
+            entry_low,
+            entry_high,
+            take_profit_1,
+            take_profit_2,
+            stop_loss,
+        )
         if can_do:
             decision = "做"
-            action = (
-                f"B级试单，最多{yuan(capital)}，约{shares}股；"
-                f"只在9:40/10:45确认后执行，不追高。"
-            )
+            action = decision_card["plain_text"]
         else:
             decision = "不做"
             if board != "沪深主板":
                 action = f"{board}波动和权限风险更高，今天只观察。"
             elif not is_theme:
                 action = "未命中当前主线，今天只观察。"
+            elif layer_score < 2:
+                action = "主线共振不足，今天只观察。"
+            elif execution_score < 7:
+                action = "执行质量不够，今天只观察。"
+            elif risk_gate.get("blocked"):
+                action = risk_gate.get("reason", "风控闸门关闭，今天不做。")
             else:
                 action = "涨幅接近追高区，等回踩，不主动开仓。"
         cards.append(
@@ -1322,6 +1454,11 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
                 "stop_loss": stop_loss,
                 "action": action,
                 "reason": "；".join(item.get("reasons", [])[:3]),
+                "layer_resonance_score": layer_score,
+                "execution_quality_score": execution_score,
+                "position_permission": position_permission,
+                "decision_card": decision_card,
+                "risk_gate": risk_gate,
             }
         )
 
@@ -1383,13 +1520,15 @@ def action_plan_markdown_lines(report: Dict) -> List[str]:
         lines.append("- 短线结论：今天没有默认可做标的；空手比硬做更重要。")
 
     if stock_cards:
-        lines.extend(["", "| 标的 | 做/不做 | 买多少 | 买入区 | 止盈 | 止损 | 小白解释 |", "| --- | --- | ---: | --- | --- | --- | --- |"])
+        lines.extend(["", "| 标的 | 做/不做 | 主线分 | 执行分 | 买多少 | 买入区 | 止盈 | 止损 | 小白解释 |", "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- |"])
         for item in stock_cards[:6]:
             lines.append(
-                "| {code} {name} | {decision} | {capital} / {shares}股 | {entry_low}-{entry_high} | {tp1}/{tp2} | {stop} | {action} |".format(
+                "| {code} {name} | {decision} | {layer_score} | {execution_score} | {capital} / {shares}股 | {entry_low}-{entry_high} | {tp1}/{tp2} | {stop} | {action} |".format(
                     code=markdown_escape(item.get("code")),
                     name=markdown_escape(item.get("name")),
                     decision=markdown_escape(item.get("decision")),
+                    layer_score=item.get("layer_resonance_score", 0),
+                    execution_score=item.get("execution_quality_score", 0),
                     capital=yuan(item.get("capital")),
                     shares=item.get("shares", 0),
                     entry_low=fmt(item.get("entry_low")),
@@ -1412,6 +1551,33 @@ def action_plan_markdown_lines(report: Dict) -> List[str]:
     else:
         lines.append("- 期权结论：今天没有必须模拟的合约；看不懂就不做。")
     return lines
+
+
+def build_action_stack(report: Dict) -> Dict:
+    portfolio = report.get("portfolio", {})
+    pilot = short_term_pilot_policy(portfolio)
+    risk_gate = daily_risk_gate(portfolio, pilot) if pilot else {
+        "blocked": True,
+        "level": "DISABLED",
+        "reason": "短线试运行未启用",
+    }
+    stock_cards = short_term_action_cards(report)
+    option_radar = report.get("option_sim_radar", {})
+    option_cards = option_beginner_cards(option_radar)
+    return {
+        "generated_at": report.get("generated_at"),
+        "risk_gate": risk_gate,
+        "short_term_cards": stock_cards,
+        "option_cards": option_cards,
+        "xingyao_status": xingyao_status_text(option_radar),
+        "fields": [
+            "layer_resonance_score",
+            "execution_quality_score",
+            "position_permission",
+            "decision_card",
+            "risk_gate",
+        ],
+    }
 
 
 def action_plan_html(report: Dict) -> str:
@@ -1440,6 +1606,8 @@ def action_plan_html(report: Dict) -> str:
             <tr>
                 <td><strong>{html.escape(str(item.get('code')))}</strong><br>{html.escape(str(item.get('name')))}</td>
                 <td><strong style="color:{color};">{html.escape(str(item.get('decision')))}</strong></td>
+                <td>{html.escape(str(item.get('layer_resonance_score', 0)))}</td>
+                <td>{html.escape(str(item.get('execution_quality_score', 0)))}</td>
                 <td>{yuan(item.get('capital'))}<br>{html.escape(str(item.get('shares')))}股</td>
                 <td>{fmt(item.get('entry_low'))}-{fmt(item.get('entry_high'))}</td>
                 <td>{fmt(item.get('take_profit_1'))}<br>{fmt(item.get('take_profit_2'))}</td>
@@ -1467,13 +1635,15 @@ def action_plan_html(report: Dict) -> str:
             <tr>
                 <th>标的</th>
                 <th>做/不做</th>
+                <th>主线分</th>
+                <th>执行分</th>
                 <th>买多少</th>
                 <th>买入区</th>
                 <th>止盈</th>
                 <th>止损</th>
                 <th>小白解释</th>
             </tr>
-            {''.join(stock_rows) if stock_rows else '<tr><td>--</td><td>不做</td><td>--</td><td>--</td><td>--</td><td>--</td><td>今日无合格短线动作。</td></tr>'}
+            {''.join(stock_rows) if stock_rows else '<tr><td>--</td><td>不做</td><td>0</td><td>0</td><td>--</td><td>--</td><td>--</td><td>--</td><td>今日无合格短线动作。</td></tr>'}
         </table>
         <p><strong>星耀状态：</strong>{html.escape(xingyao_status_text(option_radar))}</p>
         <p><strong>期权/期货类：</strong>{option_line} 期货模块当前没有接入实盘数据，今天不做期货实盘。</p>
@@ -1641,7 +1811,7 @@ def run_radar() -> Dict:
     coverage = coverage_report(watchlist, stock_radar, broad_market_scan, option_sim_radar)
 
     now = datetime.now(BEIJING_TZ)
-    return {
+    report = {
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "session": trading_session_context(now),
         "watch_count": len(watchlist),
@@ -1653,6 +1823,8 @@ def run_radar() -> Dict:
         "option_sim_radar": option_sim_radar,
         "coverage": coverage,
     }
+    report["action_stack"] = build_action_stack(report)
+    return report
 
 
 def color_for(level: str) -> str:
@@ -1775,10 +1947,6 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
     if not pilot or not pilot.get("enabled"):
         return []
 
-    candidates = pilot.get("candidate_codes") or []
-    candidate_text = "、".join(
-        f"{item.get('code')} {item.get('name')}" for item in candidates if item.get("code")
-    )
     windows = pilot.get("time_windows") or []
     window_text = "；".join(
         f"{item.get('time')} {item.get('action')}" for item in windows if item.get("time")
@@ -1795,10 +1963,10 @@ def short_term_pilot_summary_lines(portfolio: Dict) -> List[str]:
         "",
         "## 短线试运行",
         "",
-        f"- 日期：{pilot.get('pilot_date', '未设置')}；阶段：{pilot.get('stage', '熟悉度测试')}",
+        f"- 今日版本：{short_term_pilot_title(pilot)}",
         f"- 日目标/风控：目标 {yuan(pilot.get('daily_profit_target'))}；软熔断 {yuan(pilot.get('daily_loss_soft_stop'))}；硬熔断 {yuan(pilot.get('daily_loss_hard_stop'))}",
         f"- 资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {pilot.get('max_stocks', 2)} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}",
-        f"- 候选：{candidate_text}",
+        "- 候选来源：每天由全市场扫描和主线共振生成；旧候选只作复盘参考，不再固定照抄。",
         f"- 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}",
         bucket_text,
         f"- 时间：{window_text}",
@@ -1845,16 +2013,6 @@ def short_term_pilot_html(portfolio: Dict) -> str:
     if not pilot or not pilot.get("enabled"):
         return ""
 
-    candidates = pilot.get("candidate_codes") or []
-    candidate_html = "<br>".join(
-        "{code} {name}：{theme}；{entry}".format(
-            code=html.escape(str(item.get("code", ""))),
-            name=html.escape(str(item.get("name", ""))),
-            theme=html.escape(str(item.get("theme", ""))),
-            entry=html.escape(str(item.get("entry_rule", ""))),
-        )
-        for item in candidates
-    )
     windows = pilot.get("time_windows") or []
     window_html = "<br>".join(
         f"{html.escape(str(item.get('time', '')))}：{html.escape(str(item.get('action', '')))}"
@@ -1873,13 +2031,13 @@ def short_term_pilot_html(portfolio: Dict) -> str:
 
     return f"""
             <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
-                <strong>短线试运行：{html.escape(str(pilot.get('pilot_date', '未设置')))} {html.escape(str(pilot.get('stage', '熟悉度测试')))}</strong><br>
+                <strong>短线试运行：{html.escape(short_term_pilot_title(pilot))}</strong><br>
                 目标：{html.escape(str(pilot.get('goal', '先练执行，不追求大额盈利。')))}<br>
                 日目标/风控：目标 {yuan(pilot.get('daily_profit_target'))}；软熔断 {yuan(pilot.get('daily_loss_soft_stop'))}；硬熔断 {yuan(pilot.get('daily_loss_hard_stop'))}。<br>
                 资金：单只默认 {yuan(pilot.get('capital_per_stock'))}；强确认可到 {yuan(pilot.get('strong_signal_capital_per_stock'))}；最多 {html.escape(str(pilot.get('max_stocks', 2)))} 只；总额不超过 {yuan(pilot.get('max_total_capital'))}。<br>
                 测算：涨3%约 {yuan(pilot.get('estimated_profit_if_3pct'))}；涨5%约 {yuan(pilot.get('estimated_profit_if_5pct'))}；亏3%约 {yuan(pilot.get('estimated_loss_if_minus_3pct'))}。<br>
                 {bucket_html}
-                <strong>候选</strong><br>{candidate_html}<br>
+                <strong>候选来源</strong><br>每天由全市场扫描和主线共振生成；固定候选只作复盘参考，不再直接照抄进今日动作。<br>
                 <strong>时间窗口</strong><br>{window_html}<br>
                 <strong>硬规则</strong><br>{hard_rule_html}
             </div>
@@ -2172,6 +2330,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
         "stock_radar": report.get("stock_radar", {}),
         "broad_market_scan": report.get("broad_market_scan", {}),
         "option_sim_radar": report.get("option_sim_radar", {}),
+        "action_stack": report.get("action_stack", {}),
         "coverage": report.get("coverage", {}),
         "failures": report.get("failures", []),
         "ai_summary": report.get("ai_summary", ""),
