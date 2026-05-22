@@ -1460,7 +1460,7 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
         is_theme = bool(item.get("theme_layers"))
         layer_score = layer_resonance_score(item, broad_results)
         execution_score = execution_quality_score(item, pilot)
-        can_do = bool(
+        base_can_do = bool(
             is_default_board
             and is_theme
             and price
@@ -1470,14 +1470,18 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
             and execution_score >= 7
             and not risk_gate.get("blocked")
         )
-        capital = default_capital if can_do else 0
-        shares = round_lot_shares(capital, price, lot_size)
+        capital = default_capital if base_can_do else 0
+        position_permission = position_permission_for_item(item, portfolio, capital)
+        shares = int(position_permission.get("estimated_shares") or 0)
+        can_do = base_can_do and bool(position_permission.get("allowed")) and shares > 0
+        if not can_do:
+            capital = 0
+            shares = 0
         entry_low = price * 0.995 if price else None
         entry_high = price * 1.005 if price else None
         take_profit_1 = price * (1 + target_profit_pct) if price else None
         take_profit_2 = price * (1 + min(target_profit_pct + 0.02, 0.05)) if price else None
         stop_loss = price * (1 - stop_loss_pct) if price else None
-        position_permission = position_permission_for_item(item, portfolio, capital)
         decision_card = decision_card_for_item(
             item,
             can_do,
