@@ -71,6 +71,7 @@ DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180", "513500"}
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", "portfolio.json")
 REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
+XINGYAO_CACHE_PATH = os.getenv("XINGYAO_CACHE_PATH", "data/xingyao_option_basic_cache.json")
 DIGITAL_INFRA_FILE = os.getenv("DIGITAL_INFRA_FILE", "digital_infra_watchlist.json")
 
 
@@ -353,15 +354,73 @@ def xingyao_sdk_paths() -> List[str]:
     return paths
 
 
+def xingyao_cache_path() -> Path:
+    return Path(XINGYAO_CACHE_PATH).expanduser()
+
+
+def xingyao_cache_payload(payload: Dict) -> Dict:
+    clean_payload = json.loads(json.dumps(payload, ensure_ascii=False, default=str))
+    clean_payload["cache_updated_at"] = datetime.now(BEIJING_TZ).isoformat()
+    clean_payload["cache_schema"] = 1
+    return clean_payload
+
+
+def save_xingyao_option_cache(payload: Dict) -> None:
+    path = xingyao_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(xingyao_cache_payload(payload), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    logger.info("Xingyao option cache saved: %s", path)
+
+
+def load_xingyao_option_cache() -> Optional[Dict]:
+    path = xingyao_cache_path()
+    if not path.exists():
+        return None
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Xingyao option cache read failed: %s", exc)
+        return {
+            "enabled": False,
+            "source": "simulation",
+            "contracts": [],
+            "error": f"cache read failed: {exc}",
+        }
+
+    contracts = payload.get("contracts") or []
+    if not isinstance(contracts, list):
+        contracts = []
+
+    payload["enabled"] = bool(contracts)
+    payload["source"] = "xingyao_cache" if contracts else "simulation"
+    payload["contracts"] = contracts
+    payload["contract_count"] = len(contracts)
+    payload["cache_path"] = str(path)
+    payload["cache_used"] = True
+    payload.setdefault("error", "" if contracts else "cache empty")
+    return payload
+
+
 def fetch_xingyao_option_basic_rows() -> Dict:
     """Fetch ETF option basic info from Galaxy AmazingData when configured locally."""
     if not env_enabled("XINGYAO_ENABLED", "false"):
-        return {"enabled": False, "source": "simulation", "contracts": [], "error": "disabled"}
+        cached = load_xingyao_option_cache()
+        if cached and cached.get("contracts"):
+            return cached
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": "disabled; no local cache"}
 
     username = os.getenv("XINGYAO_USER", "").strip()
     password = os.getenv("XINGYAO_PASSWORD", "").strip()
     if not username or not password:
-        return {"enabled": False, "source": "simulation", "contracts": [], "error": "missing credentials"}
+        cached = load_xingyao_option_cache()
+        if cached and cached.get("contracts"):
+            cached["error"] = "using cache; missing credentials"
+            return cached
+        return {"enabled": False, "source": "simulation", "contracts": [], "error": "missing credentials; no local cache"}
 
     for sdk_path in xingyao_sdk_paths():
         if sdk_path and os.path.exists(sdk_path) and sdk_path not in sys.path:
@@ -385,7 +444,7 @@ def fetch_xingyao_option_basic_rows() -> Dict:
         option_codes = base.get_option_code_list("EXTRA_ETF_OP")
         option_info = info.get_option_basic_info(option_codes, is_local=False)
         contracts = option_info.to_dict("records") if hasattr(option_info, "to_dict") else []
-        return {
+        payload = {
             "enabled": True,
             "source": "xingyao_basic",
             "contracts": contracts,
@@ -393,8 +452,14 @@ def fetch_xingyao_option_basic_rows() -> Dict:
             "option_code_count": len(option_codes),
             "error": "",
         }
+        save_xingyao_option_cache(payload)
+        return payload
     except Exception as exc:
         logger.warning("Xingyao option basic fetch failed: %s", exc)
+        cached = load_xingyao_option_cache()
+        if cached and cached.get("contracts"):
+            cached["error"] = f"using cache; live fetch failed: {exc}"
+            return cached
         return {"enabled": False, "source": "simulation", "contracts": [], "error": str(exc)}
     finally:
         with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -499,6 +564,9 @@ def run_option_sim_radar() -> Dict:
         "xingyao_enabled": xingyao.get("enabled", False),
         "xingyao_contract_count": xingyao.get("contract_count", 0),
         "xingyao_error": xingyao.get("error", ""),
+        "xingyao_cache_used": xingyao.get("cache_used", False),
+        "xingyao_cache_path": xingyao.get("cache_path", ""),
+        "xingyao_cache_updated_at": xingyao.get("cache_updated_at", ""),
         "results": results,
         "failures": failures,
     }
