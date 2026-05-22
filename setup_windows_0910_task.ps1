@@ -2,15 +2,21 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runner = Join-Path $projectRoot "run_monitor_local.ps1"
+$catchupRunner = Join-Path $projectRoot "run_monitor_catchup.ps1"
 
 if (-not (Test-Path -LiteralPath $runner)) {
     throw "Missing local runner: $runner"
+}
+
+if (-not (Test-Path -LiteralPath $catchupRunner)) {
+    throw "Missing catchup runner: $catchupRunner"
 }
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
+    -WakeToRun `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
@@ -45,6 +51,26 @@ foreach ($slot in $times) {
     Write-Host "Installed Windows scheduled task: $taskName ($($slot.Time) $($slot.Label))"
 }
 
+$catchupAction = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$catchupRunner`""
+
+$catchupTriggers = @(
+    (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At "09:25"),
+    (New-ScheduledTaskTrigger -AtLogOn)
+)
+
+Register-ScheduledTask `
+    -TaskName "ETF Strategy Monitor Catchup" `
+    -Action $catchupAction `
+    -Trigger $catchupTriggers `
+    -Settings $settings `
+    -Description "Check whether today's ETF Strategy Monitor email was sent; if not, run it once." `
+    -Force | Out-Null
+
+Write-Host "Installed Windows scheduled task: ETF Strategy Monitor Catchup"
+
 Write-Host "Runner: $runner"
+Write-Host "Catchup runner: $catchupRunner"
 Write-Host "Schedule: Monday-Friday 09:10, 09:45, 10:45, 13:45, 14:40, 21:30"
 Write-Host "Logs will be saved in: $(Join-Path $projectRoot 'logs')"
