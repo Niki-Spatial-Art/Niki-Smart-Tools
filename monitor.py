@@ -680,7 +680,7 @@ def fetch_market_snapshot_page(page: int, page_size: int = 100) -> List[Dict]:
             "fields": "f12,f14,f2,f3,f6,f8,f10,f17,f18,f100",
             "ut": "fa5fd1943c7b386f172d6893dbfba10b",
         },
-        timeout=int(os.getenv("BROAD_MARKET_PAGE_TIMEOUT_SECONDS", "4")),
+        timeout=int(os.getenv("BROAD_MARKET_PAGE_TIMEOUT_SECONDS", "2")),
         retries=int(os.getenv("BROAD_MARKET_PAGE_RETRIES", "1")),
     ).get("data") or {}
     return data.get("diff") or []
@@ -728,7 +728,7 @@ def fetch_market_snapshot_page_sina(page: int, page_size: int = 100) -> List[Dic
         "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData",
         params={
             "page": page,
-            "num": min(page_size, int(os.getenv("SINA_MARKET_PAGE_SIZE", "80"))),
+            "num": min(page_size, int(os.getenv("SINA_MARKET_PAGE_SIZE", "200"))),
             "sort": "amount",
             "asc": "0",
             "node": sina_market_node(),
@@ -739,7 +739,7 @@ def fetch_market_snapshot_page_sina(page: int, page_size: int = 100) -> List[Dic
             "User-Agent": "Mozilla/5.0 ETF Strategy Monitor",
             "Referer": "https://vip.stock.finance.sina.com.cn/",
         },
-        timeout=int(os.getenv("SINA_MARKET_PAGE_TIMEOUT_SECONDS", "8")),
+        timeout=int(os.getenv("SINA_MARKET_PAGE_TIMEOUT_SECONDS", "3")),
     )
     response.raise_for_status()
     response.encoding = "gbk"
@@ -925,6 +925,9 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
                     continue
                 seen_codes.add(item["code"])
                 candidates.append(item)
+            if time.monotonic() - started_at >= time_budget:
+                failures.append({"page": page, "error": f"broad market scan time budget reached after page {page}"})
+                break
         except Exception as exc:
             logger.warning("broad market page %s skipped: %s", page, exc)
             failures.append({"page": page, "error": str(exc)})
