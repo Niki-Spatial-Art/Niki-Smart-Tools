@@ -1,0 +1,49 @@
+name: Full System Rerun
+
+on:
+  workflow_dispatch:
+
+jobs:
+  full-system-rerun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run full system and send aggregate email
+        run: python tools/full_system_rerun.py --email
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          SMTP_SERVER: smtp.qq.com
+          SMTP_PORT: 587
+          RATE_DIFF_THRESHOLD: 0.15
+          AI_ENABLED: ${{ secrets.AI_ENABLED }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          XINGYAO_ENABLED: ${{ secrets.XINGYAO_ENABLED }}
+          XINGYAO_USER: ${{ secrets.XINGYAO_USER }}
+          XINGYAO_PASSWORD: ${{ secrets.XINGYAO_PASSWORD }}
+          XINGYAO_HOST: ${{ secrets.XINGYAO_HOST }}
+          XINGYAO_PORT: ${{ secrets.XINGYAO_PORT }}
+          XINGYAO_SDK_PATHS: ${{ secrets.XINGYAO_SDK_PATHS }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-system-rerun-reports
+          path: |
+            reports/latest.md
+            reports/latest.json
+            reports/learning_intake.md
+            reports/public_web_fetch_scrapling.json
+            reports/full_system_rerun.html
