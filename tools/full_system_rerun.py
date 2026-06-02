@@ -139,6 +139,20 @@ def run_status_summary() -> str:
     return "\n".join(f"- {item}" for item in RUN_STATUS)
 
 
+def action_audit_section() -> str:
+    report = ROOT / "reports" / "latest.json"
+    journal = ROOT / "data" / "paper_trade_journal.csv"
+    if not report.exists():
+        return (
+            "reports/latest.json missing.\n"
+            "Action-card export was skipped because the main radar did not finish a fresh report.\n"
+            "This usually means the quote provider was slow or returned repeated errors. "
+            "Keep the system in observation mode and rerun after the data source recovers."
+        )
+    _, action_message = build_plan_message(report, journal)
+    return action_message
+
+
 def run_scrapling_check() -> str:
     page = fetch_public_page(
         "https://github.com/D4Vinci/Scrapling",
@@ -160,10 +174,6 @@ def run_scrapling_check() -> str:
 
 
 def build_html_report(scrapling_text: str) -> str:
-    _, action_message = build_plan_message(
-        ROOT / "reports" / "latest.json",
-        ROOT / "data" / "paper_trade_journal.csv",
-    )
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sections = [
         (
@@ -176,7 +186,7 @@ def build_html_report(scrapling_text: str) -> str:
         ("系统功能集合", read_text(ROOT / "docs" / "system_feature_collection_2026-06-02.md", 7000)),
         ("子步骤状态", run_status_summary()),
         ("主雷达摘要", summary_from_latest_json()),
-        ("行动卡审计", action_message),
+        ("行动卡审计", action_audit_section()),
         ("纸面交易日志摘要", journal_summary()),
         ("Scrapling 公开网页抓取验证", scrapling_text),
         ("学习源报告摘要", read_text(ROOT / "reports" / "learning_intake.md", 8000)),
@@ -236,17 +246,21 @@ def main() -> int:
         env["MONITOR_SEND_EMAIL"] = "false"
         run_python(["monitor.py"], env=env, timeout=480)
 
-    run_python(
-        [
-            "tools/action_audit.py",
-            "export-plan",
-            "--report",
-            "reports/latest.json",
-            "--journal",
-            "data/paper_trade_journal.csv",
-        ],
-        timeout=120,
-    )
+    if (ROOT / "reports" / "latest.json").exists():
+        run_python(
+            [
+                "tools/action_audit.py",
+                "export-plan",
+                "--report",
+                "reports/latest.json",
+                "--journal",
+                "data/paper_trade_journal.csv",
+            ],
+            timeout=120,
+        )
+    else:
+        RUN_STATUS.append("skipped: action-card export because reports/latest.json is missing")
+        print("step_skipped=action-card export missing reports/latest.json", flush=True)
     run_python(["tools/action_audit.py", "summarize", "--journal", "data/paper_trade_journal.csv"], timeout=120)
 
     learning_args = [
