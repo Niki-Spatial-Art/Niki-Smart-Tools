@@ -26,7 +26,13 @@ data -> radar -> action card -> human review -> paper journal -> backtest -> rul
 | THSTrader | UI-state risk research | mobile/simulation automation reference only; useful for documenting focus, screenshot, and stale-state hazards |
 | AI Trading Journal | review/journal UX | useful for improving trade diary, AI conversation capture, and post-trade attribution |
 | FinGPT | AI research/RAG | useful for sentiment and evidence extraction; never convert model text directly into a trade |
+| Qbot | AI quant platform research | useful as an ecosystem map for research/backtest/visualization; no auto execution |
 | ai_quant_trade | learning syllabus | broad AI-quant study map; use examples as research prompts, not production modules |
+| MilleXi stock_trading | AI/RL experiment sample | useful for LSTM/RL teaching patterns and Gradio UX; do not promote model predictions without out-of-sample validation |
+| czsc | technical signal research | useful for Chan-theory fractal/stroke/signal concepts; every signal must be replay-tested before radar use |
+| SmartStock-AI-Kit | watch-terminal UX | useful for voice alerts and compact watch surfaces; hardware/AI suggestions remain observation only |
+| Binance Futures Dashboard | monitoring UX | useful for filtering, alert colors, and table interactions; crypto futures signals are out of scope |
+| TradeMatcher / lightning-engine | matching architecture reading | study orderbook, risk, event-source, and settlement boundaries only; not needed for personal radar execution |
 | Microsoft Qlib | AI/factor research | useful for ML/factor experiments, not intraday order operation |
 
 ## Project Layers
@@ -89,6 +95,11 @@ The latest pasted sources reinforce the same boundary:
 
 - `easytrader`, `ths_trade`, `THSTrader`, `stock-1`, and `AutoTrade` are useful for
   studying broker/client automation failure modes, not for direct deployment.
+- `CtpSystem`, `PyTradingSystem`, and browser AI auto-trading demos are execution
+  cautionary references only; keep them out of the main A-share/ETF workflow.
+- Matching engines such as `TradeMatcher/match-engine` and `lightning-engine`
+  are architecture reading for orderbook/risk separation, not tools needed by a
+  human-reviewed personal radar.
 - UI automation risks include stale windows, lost focus, pop-up dialogs, delayed
   confirmations, wrong account context, and broker client upgrades.
 - If execution research is ever resumed, start with simulation, then paper

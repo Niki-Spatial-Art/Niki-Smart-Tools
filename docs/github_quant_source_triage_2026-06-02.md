@@ -22,11 +22,19 @@ data quality, and human-confirmed action cards only. No automatic live orders.
 | Freqtrade | Crypto architecture reference | Study config/backtest/risk-control design only. |
 | Hummingbot | Connector/risk architecture reference | Crypto market-making architecture reference only. |
 | FinGPT | AI research assistant | Useful for financial sentiment/RAG patterns; output must be evidence-ranked and never a direct trading signal. |
+| Qbot | AI quant platform reference | Useful ecosystem reference for research/backtest/visualization flow; do not enable auto execution. |
 | ai_quant_trade | Learning syllabus | Broad Chinese AI-quant map; use for study structure and example discovery, not as production code. |
+| MilleXi stock_trading | AI/RL education sample | LSTM plus reinforcement learning and Gradio UI; use only for experiment design and learning. |
+| czsc | Technical-analysis reference | Chan theory fractal/stroke/signal toolkit; validate every signal before use. |
+| SmartStock-AI-Kit | Watch-terminal UX | Voice alert, hardware display, and compact watchlist interaction reference; observe only. |
 | easytrader | Broker-boundary research | Study miniqmt/client automation boundaries only; paper-account or human-confirmed mode. |
 | ths_trade | Execution risk sample | Useful queue/log/failure-mode ideas from Tonghuashun automation; do not run unattended live orders. |
 | THSTrader | UI automation risk sample | Useful for understanding mobile/simulation UI-state risk; research/paper mode only. |
 | AI Trading Journal | Review UX | Useful UI reference for AI conversation capture, trade journaling, and post-trade attribution. |
+| CCXT | Crypto connector reference | Unified exchange API and market-data abstraction; useful only for connector design, not A-share execution. |
+| BingoCrypto Binance Futures Dashboard | Dashboard UX | Filter, alert, table, and rule-highlighting reference for monitoring UX; do not copy futures signals. |
+| TradeMatcher match-engine | Matching-engine architecture | Java orderbook/risk/accounting architecture reference; no direct integration. |
+| lightning-engine | Matching-engine architecture | Go in-memory orderbook and settlement-boundary reference; no direct integration. |
 
 ## Already Covered
 
@@ -51,6 +59,10 @@ data quality, and human-confirmed action cards only. No automatic live orders.
 | BKExchange | Mostly exchange/commercial demo material; not useful for current radar/backtest/journal stack. |
 | stock-1 / wingfirefly stock | Old/forked Eastmoney auto-trading stack; keep out of the core system because of broker/API and maintenance risk. |
 | AutoTrade | Very old Guangfa web automation framework; useful historically, but too stale and execution-risky for current use. |
+| CtpSystem | Old SHFE/CTP learning project; useful background only, but too stale and execution-oriented for the current A-share/ETF radar. |
+| PyTradingSystem | Early-stage trading-system skeleton with real-trading ambition; too small and stale for core intake. |
+| nof1.ai-AI-trading-agent | Browser demo for crypto AI auto-trading; useful as UI/risk caution only, not a source of trading logic. |
+| Forked czsc mirror | Do not track stale forks such as `gongxianshengjiadexiaohuihui/-`; track upstream `waditu/czsc` instead. |
 | CryptocurrencyExchangeTechnology article | Matching-engine architecture idea is interesting, but the pasted repo path could not be verified through GitHub API; keep as unverified architecture reading only. |
 | Alpaca-MCP / Freqtrade-MCP / Investor-Agent article claims | Treat as marketing until primary repos and claims are verified. Do not intake return claims or nanosecond/FPGA statements. |
 | Unverified MCP/AI article claims | Claims like extreme returns, nanosecond parsing, or unnamed MCP projects need primary GitHub/source verification before intake. |

@@ -115,6 +115,12 @@
       "why_watch": "Reinforcement-learning trading environments and evaluation ideas. Use cautiously."
     },
     {
+      "name": "Qbot",
+      "type": "github",
+      "url": "https://github.com/UFund-Me/Qbot",
+      "why_watch": "AI quant research platform reference for end-to-end research, backtest, and visualization patterns; use as study reference, not automatic execution."
+    },
+    {
       "name": "FinGPT",
       "type": "github",
       "url": "https://github.com/AI4Finance-Foundation/FinGPT",
@@ -125,6 +131,24 @@
       "type": "github",
       "url": "https://github.com/charliedream1/ai_quant_trade",
       "why_watch": "Chinese AI quant learning map spanning indicators, factors, ML/RL, and examples; use as study syllabus and sample-source index, not production trading code."
+    },
+    {
+      "name": "MilleXi stock_trading",
+      "type": "github",
+      "url": "https://github.com/MilleXi/stock_trading",
+      "why_watch": "LSTM plus reinforcement-learning stock-trading example with Gradio UI; useful for education and experiment design, not as a trading signal engine."
+    },
+    {
+      "name": "czsc",
+      "type": "github",
+      "url": "https://github.com/waditu/czsc",
+      "why_watch": "Chan theory technical-analysis toolkit for fractals, strokes, multi-level signals, and backtest examples; validate every signal before use."
+    },
+    {
+      "name": "SmartStock-AI-Kit",
+      "type": "github",
+      "url": "https://github.com/ouyangyiguang/SmartStock-AI-Kit",
+      "why_watch": "Hardware-plus-AI watch terminal UX reference for voice prompts, alert surfaces, and compact market displays; observe only."
     },
     {
       "name": "CTBZStock",
@@ -181,6 +205,12 @@
       "why_watch": "Options, rates, and risk-modeling reference for future option-simulation improvements."
     },
     {
+      "name": "CCXT",
+      "type": "github",
+      "url": "https://github.com/ccxt/ccxt",
+      "why_watch": "Unified crypto exchange API for market-data and connector-design reference; crypto-only and not a direct A-share execution dependency."
+    },
+    {
       "name": "Freqtrade",
       "type": "github",
       "url": "https://github.com/freqtrade/freqtrade",
@@ -191,6 +221,24 @@
       "type": "github",
       "url": "https://github.com/hummingbot/hummingbot",
       "why_watch": "Market-making and connector architecture reference for risk controls and exchange abstraction; crypto-only, not an A-share priority."
+    },
+    {
+      "name": "BingoCrypto Binance Futures Dashboard",
+      "type": "github",
+      "url": "https://github.com/BingoCrypto/binance-futures-dashboard",
+      "why_watch": "Crypto monitoring dashboard UX reference for filters, alerts, table sorting, and rule highlighting; do not copy futures signals."
+    },
+    {
+      "name": "TradeMatcher match-engine",
+      "type": "github",
+      "url": "https://github.com/TradeMatcher/match-engine",
+      "why_watch": "Java matching-engine architecture reference for order types, event sourcing, latency claims, and risk/accounting separation; architecture study only."
+    },
+    {
+      "name": "lightning-engine",
+      "type": "github",
+      "url": "https://github.com/xiiiew/lightning-engine",
+      "why_watch": "Go in-memory matching-engine reference for orderbook structure, gRPC boundary, and downstream settlement separation; architecture study only."
     },
     {
       "name": "awesome-quant",
