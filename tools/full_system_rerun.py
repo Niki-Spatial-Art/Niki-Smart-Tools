@@ -186,6 +186,7 @@ def build_html_report(scrapling_text: str) -> str:
         ("系统功能集合", read_text(ROOT / "docs" / "system_feature_collection_2026-06-02.md", 7000)),
         ("子步骤状态", run_status_summary()),
         ("主雷达摘要", summary_from_latest_json()),
+        ("每日目标卡", read_text(ROOT / "reports" / "daily_target_card.md", 8000)),
         ("行动卡审计", action_audit_section()),
         ("纸面交易日志摘要", journal_summary()),
         ("Scrapling 公开网页抓取验证", scrapling_text),
@@ -262,6 +263,18 @@ def main() -> int:
         RUN_STATUS.append("skipped: action-card export because reports/latest.json is missing")
         print("step_skipped=action-card export missing reports/latest.json", flush=True)
     run_python(["tools/action_audit.py", "summarize", "--journal", "data/paper_trade_journal.csv"], timeout=120)
+    run_python(
+        [
+            "tools/daily_target_card.py",
+            "--report",
+            "reports/latest.json",
+            "--review",
+            "data/trade_review_samples.csv",
+            "--output",
+            "reports/daily_target_card.md",
+        ],
+        timeout=120,
+    )
 
     learning_args = [
         "tools/learning_intake.py",

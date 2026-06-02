@@ -166,6 +166,24 @@ Build a learning-intake report from curated projects and communities:
 python tools/learning_intake.py --sources examples/learning_sources.json --output reports/learning_intake.md
 ```
 
+Build the local daily target card from the latest report and review samples:
+
+```powershell
+python tools/daily_target_card.py --report reports/latest.json --review data/trade_review_samples.csv --output reports/daily_target_card.md
+```
+
+Run the full local research/report stack and generate one aggregate HTML report:
+
+```powershell
+python tools/full_system_rerun.py
+```
+
+Reuse existing local report inputs and send one aggregate email:
+
+```powershell
+python tools/full_system_rerun.py --skip-monitor --no-network-learning --email
+```
+
 Send the learning-intake report by email:
 
 ```powershell
