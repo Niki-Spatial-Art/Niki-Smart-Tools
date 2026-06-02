@@ -11,6 +11,7 @@ The project currently keeps connector logic inside `monitor.py` to avoid prematu
 | Sina | broad-market and single-symbol fallback | useful for A-share fallback scan |
 | Yahoo | additional fallback quote path | useful for some ETF symbols |
 | Xingyao/AmazingData | optional option basics | requires local SDK path and credentials |
+| Public web scraper | optional public-page fetcher | `connectors/public_web_scraper.py`; supports Scrapling if installed and falls back to requests |
 | Local files | portfolio, reports, paper journal | deterministic and auditable |
 
 ## Connector Principles
@@ -19,6 +20,8 @@ The project currently keeps connector logic inside `monitor.py` to avoid prematu
 - Keep credentials in `.env` or GitHub Secrets.
 - Treat missing data as a risk state, not as permission to invent a signal.
 - Do not reverse engineer broker private login sessions or market-data channels.
+- Do not use scraping tools to bypass access controls, CAPTCHA, Cloudflare
+  challenges, paid-data walls, or authenticated broker portals.
 
 ## Future Shape
 
@@ -32,6 +35,7 @@ connectors/
 |-- tencent.py
 |-- yahoo.py
 |-- xingyao.py
+|-- public_web_scraper.py
 `-- file_exports.py
 ```
 

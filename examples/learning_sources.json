@@ -91,6 +91,12 @@
       "why_watch": "Agent + skill + connector reference design for finance workflows; adapt the human sign-off and staged output pattern."
     },
     {
+      "name": "Scrapling",
+      "type": "github",
+      "url": "https://github.com/D4Vinci/Scrapling",
+      "why_watch": "Modern public-web scraping framework reference for documentation/article source intake; use only for permitted public pages, not for bypassing access controls."
+    },
+    {
       "name": "OpenBB Agents",
       "type": "github",
       "url": "https://github.com/OpenBB-finance/OpenBB",
