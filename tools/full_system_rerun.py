@@ -153,6 +153,7 @@ def build_html_report(scrapling_text: str) -> str:
             + "\n已成功运行：主雷达、行动卡导出/汇总、学习源 intake、Scrapling 公开网页抓取验证。\n"
             + "Dashboard：最新数据已生成；本地服务可用 run_dashboard_local.ps1 打开。",
         ),
+        ("系统功能集合", read_text(ROOT / "docs" / "system_feature_collection_2026-06-02.md", 7000)),
         ("主雷达摘要", summary_from_latest_json()),
         ("行动卡审计", action_message),
         ("纸面交易日志摘要", journal_summary()),
