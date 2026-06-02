@@ -3335,6 +3335,16 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
     metadata = build_report_metadata(report, subject)
     portfolio = report.get("portfolio", {})
     session = report.get("session", {})
+    upgrade_lines = [
+        "## 系统升级状态",
+        "",
+        "- 已加入学习源 intake：Qbot、MilleXi stock_trading、czsc、SmartStock-AI-Kit、CCXT、BingoCrypto Dashboard、TradeMatcher、lightning-engine。",
+        "- 已新增全系统集合文档：`docs/system_feature_collection_2026-06-02.md`。",
+        "- 已新增全系统重跑邮件：主雷达、行动卡、纸面日志、学习源报告、公开网页抓取检查会合并成一封邮件。",
+        "- 已加执行边界：撮合引擎和加密合约项目只做架构/UX学习，不接入 A 股/ETF 实盘链路。",
+        "- 当前普通 ETF 雷达邮件也会显示本升级状态，避免只看到行情表而看不出系统版本。",
+        "",
+    ]
     lines = [
         f"# {subject}",
         "",
@@ -3348,6 +3358,7 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         "- 说明：仅作交易纪律提醒，不构成投资建议。",
         f"- 当前窗口：{session.get('label', '复盘计划')}；下一决策点：{session.get('next_decision_time', '下个交易日09:10')}；提示：{session.get('guidance', '')}",
         "",
+        *upgrade_lines,
         "## 账户配置",
         "",
         f"- 总资金：{yuan(portfolio.get('total_capital'))}",
@@ -3686,6 +3697,19 @@ def generate_html_email(report: Dict) -> str:
         or "-"
     )
 
+    upgrade_html = """
+        <div class="upgrade">
+            <h3>系统升级状态</h3>
+            <ul>
+                <li><strong>学习源已扩展：</strong>Qbot、MilleXi stock_trading、czsc、SmartStock-AI-Kit、CCXT、BingoCrypto Dashboard、TradeMatcher、lightning-engine。</li>
+                <li><strong>新增系统全集文档：</strong><code>docs/system_feature_collection_2026-06-02.md</code>。</li>
+                <li><strong>新增全系统重跑邮件：</strong>主雷达、行动卡、纸面日志、学习源报告、公开网页抓取检查会合并成一封邮件。</li>
+                <li><strong>执行边界已加固：</strong>撮合引擎和加密合约项目只做架构/UX学习，不接入 A 股/ETF 实盘链路。</li>
+                <li><strong>普通 ETF 雷达邮件已升级：</strong>现在也会显示这段状态，避免只看到行情表而看不出系统版本。</li>
+            </ul>
+        </div>
+    """
+
     rows = []
     for item in report["results"]:
         reasons = "<br>".join(html.escape(reason) for reason in item["reasons"])
@@ -3999,6 +4023,10 @@ def generate_html_email(report: Dict) -> str:
             th, td {{ border-bottom: 1px solid #d8dee4; padding: 10px; vertical-align: top; text-align: left; }}
             th {{ background: #f6f8fa; }}
             .note {{ margin-top: 18px; padding: 12px; border-left: 4px solid #bf8700; background: #fff8c5; }}
+            .upgrade {{ margin-top: 18px; padding: 14px; border-left: 4px solid #0969da; background: #eaf5ff; }}
+            .upgrade h3 {{ margin-top: 0; margin-bottom: 8px; }}
+            .upgrade ul {{ margin: 0; padding-left: 20px; }}
+            .upgrade li {{ margin: 5px 0; }}
             .ai {{ margin-top: 18px; padding: 14px; border-left: 4px solid #8250df; background: #f6f8fa; }}
             .footer {{ margin-top: 20px; color: #6e7781; font-size: 12px; }}
         </style>
@@ -4007,6 +4035,7 @@ def generate_html_email(report: Dict) -> str:
         <div class="container">
             <h2>ETF Strategy Monitor</h2>
             <div class="sub">生成时间：{html.escape(str(report_generated_at))} 北京时间。仅作交易纪律提醒，不构成投资建议。</div>
+            {upgrade_html}
             <div class="note" style="background:#eaf5ff; border-left-color:#0969da;">
                 <strong>{html.escape(str(session.get('label', '复盘计划')))}</strong><br>
                 下一决策点：{html.escape(str(session.get('next_decision_time', '下个交易日09:10')))}<br>
