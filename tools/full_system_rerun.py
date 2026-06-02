@@ -31,6 +31,8 @@ from connectors.public_web_scraper import fetch_public_page, pages_to_json
 from emailer import EmailNotifier
 from tools.action_audit import build_plan_message
 
+RUN_STATUS: list[str] = []
+
 
 def load_local_env(path: Path = ROOT / ".env") -> None:
     if not path.exists():
@@ -46,11 +48,23 @@ def load_local_env(path: Path = ROOT / ".env") -> None:
             os.environ[key] = value
 
 
-def run_python(args: Iterable[str], env: dict[str, str] | None = None) -> None:
+def run_python(args: Iterable[str], env: dict[str, str] | None = None, timeout: int = 420) -> bool:
     command = [sys.executable, *args]
-    completed = subprocess.run(command, cwd=ROOT, env=env, text=True)
+    label = " ".join(args)
+    print(f"step_start={label}", flush=True)
+    try:
+        completed = subprocess.run(command, cwd=ROOT, env=env, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        RUN_STATUS.append(f"timeout after {timeout}s: {label}")
+        print(f"step_timeout={label}", flush=True)
+        return False
     if completed.returncode != 0:
-        raise RuntimeError(f"python step failed ({completed.returncode}): {' '.join(args)}")
+        RUN_STATUS.append(f"failed ({completed.returncode}): {label}")
+        print(f"step_failed={label} returncode={completed.returncode}", flush=True)
+        return False
+    RUN_STATUS.append(f"ok: {label}")
+    print(f"step_ok={label}", flush=True)
+    return True
 
 
 def read_text(path: Path, max_chars: int = 9000) -> str:
@@ -119,6 +133,12 @@ def journal_summary(path: Path = ROOT / "data" / "paper_trade_journal.csv") -> s
     return f"journal_rows: {len(rows)}\nclosed_trades: {closed}\nwins: {wins}\npnl_recorded: {pnl_total:.2f}"
 
 
+def run_status_summary() -> str:
+    if not RUN_STATUS:
+        return "No subprocess steps were recorded."
+    return "\n".join(f"- {item}" for item in RUN_STATUS)
+
+
 def run_scrapling_check() -> str:
     page = fetch_public_page(
         "https://github.com/D4Vinci/Scrapling",
@@ -154,6 +174,7 @@ def build_html_report(scrapling_text: str) -> str:
             + "Dashboard：最新数据已生成；本地服务可用 run_dashboard_local.ps1 打开。",
         ),
         ("系统功能集合", read_text(ROOT / "docs" / "system_feature_collection_2026-06-02.md", 7000)),
+        ("子步骤状态", run_status_summary()),
         ("主雷达摘要", summary_from_latest_json()),
         ("行动卡审计", action_message),
         ("纸面交易日志摘要", journal_summary()),
@@ -213,7 +234,7 @@ def main() -> int:
     if not args.skip_monitor:
         env = dict(os.environ)
         env["MONITOR_SEND_EMAIL"] = "false"
-        run_python(["monitor.py"], env=env)
+        run_python(["monitor.py"], env=env, timeout=480)
 
     run_python(
         [
@@ -223,9 +244,10 @@ def main() -> int:
             "reports/latest.json",
             "--journal",
             "data/paper_trade_journal.csv",
-        ]
+        ],
+        timeout=120,
     )
-    run_python(["tools/action_audit.py", "summarize", "--journal", "data/paper_trade_journal.csv"])
+    run_python(["tools/action_audit.py", "summarize", "--journal", "data/paper_trade_journal.csv"], timeout=120)
 
     learning_args = [
         "tools/learning_intake.py",
@@ -236,7 +258,7 @@ def main() -> int:
     ]
     if args.no_network_learning:
         learning_args.append("--no-network")
-    run_python(learning_args)
+    run_python(learning_args, timeout=240)
 
     scrapling_text = run_scrapling_check()
     html_content = build_html_report(scrapling_text)
