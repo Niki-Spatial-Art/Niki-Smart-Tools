@@ -55,6 +55,12 @@
       "why_watch": "Readable event-driven backtesting patterns for turning action-card rules into T+1, stop, take-profit, and sizing experiments."
     },
     {
+      "name": "learn_backtrader",
+      "type": "github",
+      "url": "https://github.com/jrothschild33/learn_backtrader",
+      "why_watch": "Tutorial-style Backtrader examples for quickly converting simple rules into reproducible backtest notebooks."
+    },
+    {
       "name": "RQAlpha",
       "type": "github",
       "url": "https://github.com/ricequant/rqalpha",
@@ -103,10 +109,46 @@
       "why_watch": "Reinforcement-learning trading environments and evaluation ideas. Use cautiously."
     },
     {
+      "name": "FinGPT",
+      "type": "github",
+      "url": "https://github.com/AI4Finance-Foundation/FinGPT",
+      "why_watch": "Financial LLM, sentiment, and RAG workflow reference for research summaries and evidence extraction; never use model output as a direct buy signal."
+    },
+    {
+      "name": "ai_quant_trade",
+      "type": "github",
+      "url": "https://github.com/charliedream1/ai_quant_trade",
+      "why_watch": "Chinese AI quant learning map spanning indicators, factors, ML/RL, and examples; use as study syllabus and sample-source index, not production trading code."
+    },
+    {
       "name": "CTBZStock",
       "type": "github",
       "url": "https://github.com/thisiszhou/CTBZStock",
       "why_watch": "A-share simulated/live trading project to study environment separation, Feishu notifications, and broker/API boundary risks; do not copy auto-trading behavior."
+    },
+    {
+      "name": "easytrader",
+      "type": "github",
+      "url": "https://github.com/shidenggui/easytrader",
+      "why_watch": "A-share client/miniqmt automation reference for broker-boundary research only; keep behind paper-account and human-confirmation gates."
+    },
+    {
+      "name": "ths_trade",
+      "type": "github",
+      "url": "https://github.com/skyformat99/ths_trade",
+      "why_watch": "Old 同花顺 automation API example useful for queueing, logging, and failure-mode review; do not connect to unattended live orders."
+    },
+    {
+      "name": "THSTrader",
+      "type": "github",
+      "url": "https://github.com/nladuo/THSTrader",
+      "why_watch": "Mobile 同花顺 simulation automation reference for UI-state and focus-risk analysis; research/paper mode only."
+    },
+    {
+      "name": "AI Trading Journal",
+      "type": "github",
+      "url": "https://github.com/TUARAN/ai-trading-journal",
+      "why_watch": "Trading journal and AI-assistant UI reference for improving paper-trade review, conversation capture, and post-trade attribution."
     },
     {
       "name": "TA-Lib",

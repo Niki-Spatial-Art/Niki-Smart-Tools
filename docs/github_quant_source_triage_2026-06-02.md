@@ -12,6 +12,7 @@ data quality, and human-confirmed action cards only. No automatic live orders.
 | --- | --- | --- |
 | CTBZStock | A-share paper/live architecture review | Study environment separation, Feishu notification, and broker/API risk boundaries. Do not copy auto-trading behavior. |
 | Backtrader | Backtest layer | Useful event-driven pattern for action-card T+1, stop, take-profit, and sizing tests. |
+| learn_backtrader | Backtest tutorial | Starter examples for converting simple rules into reproducible Backtrader experiments. |
 | RQAlpha | A-share backtest reference | A-share-oriented account and risk simulation reference. |
 | QUANTAXIS | China-market workflow reference | Useful ecosystem map, but freshness must be checked before adopting details. |
 | TA-Lib | Indicator standardization | Reference for MACD, RSI, Bollinger, ATR, and volatility features. |
@@ -20,6 +21,12 @@ data quality, and human-confirmed action cards only. No automatic live orders.
 | QuantLib | Option/risk modeling | Future option-simulation and Greeks/rates reference. |
 | Freqtrade | Crypto architecture reference | Study config/backtest/risk-control design only. |
 | Hummingbot | Connector/risk architecture reference | Crypto market-making architecture reference only. |
+| FinGPT | AI research assistant | Useful for financial sentiment/RAG patterns; output must be evidence-ranked and never a direct trading signal. |
+| ai_quant_trade | Learning syllabus | Broad Chinese AI-quant map; use for study structure and example discovery, not as production code. |
+| easytrader | Broker-boundary research | Study miniqmt/client automation boundaries only; paper-account or human-confirmed mode. |
+| ths_trade | Execution risk sample | Useful queue/log/failure-mode ideas from Tonghuashun automation; do not run unattended live orders. |
+| THSTrader | UI automation risk sample | Useful for understanding mobile/simulation UI-state risk; research/paper mode only. |
+| AI Trading Journal | Review UX | Useful UI reference for AI conversation capture, trade journaling, and post-trade attribution. |
 
 ## Already Covered
 
@@ -31,15 +38,21 @@ data quality, and human-confirmed action cards only. No automatic live orders.
 | FinRL | Already in learning sources. |
 | QuantConnect Lean | Already in learning sources and roadmap. |
 | WonderTrader | Already in execution roadmap. |
-| easytrader | Already in execution roadmap as human-confirmed/manual-assist only. |
 
 ## Do Not Add As Core Sources
 
 | Source | Reason |
 | --- | --- |
 | weipan_qihuo | Old ThinkPHP micro-trading system; unrelated to the current read-only A-share radar and likely high security/quality risk. |
-| huobi_intf | Old crypto行情 server; can be replaced by CCXT/OKX/Freqtrade references already present. Not useful for A-share radar. |
+| huobi_intf | Old crypto quote server; can be replaced by CCXT/OKX/Freqtrade references already present. Not useful for A-share radar. |
 | GridTradeSystem | Very small TSLA grid-trading plan; educational only and not useful enough for the main source list. |
+| zhugege-BTC-ETH- | Crypto-exchange source package with operational/legal/security risk; not aligned with personal A-share/ETF decision support. |
+| CoinExchange | Full crypto-exchange system source; study no code from it unless doing a separate security architecture review. |
+| BKExchange | Mostly exchange/commercial demo material; not useful for current radar/backtest/journal stack. |
+| stock-1 / wingfirefly stock | Old/forked Eastmoney auto-trading stack; keep out of the core system because of broker/API and maintenance risk. |
+| AutoTrade | Very old Guangfa web automation framework; useful historically, but too stale and execution-risky for current use. |
+| CryptocurrencyExchangeTechnology article | Matching-engine architecture idea is interesting, but the pasted repo path could not be verified through GitHub API; keep as unverified architecture reading only. |
+| Alpaca-MCP / Freqtrade-MCP / Investor-Agent article claims | Treat as marketing until primary repos and claims are verified. Do not intake return claims or nanosecond/FPGA statements. |
 | Unverified MCP/AI article claims | Claims like extreme returns, nanosecond parsing, or unnamed MCP projects need primary GitHub/source verification before intake. |
 
 ## News/Catalyst Handling

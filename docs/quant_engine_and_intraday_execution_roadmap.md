@@ -22,6 +22,11 @@ data -> radar -> action card -> human review -> paper journal -> backtest -> rul
 | vn.py / VeighNa | paper execution research | close to domestic quant workflows, but use only with paper or explicit human confirmation |
 | WonderTrader | advanced execution research | powerful but complex; not first-stage work |
 | easytrader | manual-assist research | high automation risk; do not use for unattended live orders |
+| ths_trade | execution failure-mode research | study queueing/logging and Tonghuashun client risks; do not run against live accounts |
+| THSTrader | UI-state risk research | mobile/simulation automation reference only; useful for documenting focus, screenshot, and stale-state hazards |
+| AI Trading Journal | review/journal UX | useful for improving trade diary, AI conversation capture, and post-trade attribution |
+| FinGPT | AI research/RAG | useful for sentiment and evidence extraction; never convert model text directly into a trade |
+| ai_quant_trade | learning syllabus | broad AI-quant study map; use examples as research prompts, not production modules |
 | Microsoft Qlib | AI/factor research | useful for ML/factor experiments, not intraday order operation |
 
 ## Project Layers
@@ -75,6 +80,20 @@ Future vn.py/easytrader/miniqmt work must stay behind these gates:
 - human confirmation before any real order
 - no automatic scaling to satisfy a profit target
 - no bypassing broker or account risk controls
+- no screen-clicking or app automation while the workstation is unattended
+- every execution experiment must write a journal event before and after the simulated order
+
+### Automation Tool Risk Notes
+
+The latest pasted sources reinforce the same boundary:
+
+- `easytrader`, `ths_trade`, `THSTrader`, `stock-1`, and `AutoTrade` are useful for
+  studying broker/client automation failure modes, not for direct deployment.
+- UI automation risks include stale windows, lost focus, pop-up dialogs, delayed
+  confirmations, wrong account context, and broker client upgrades.
+- If execution research is ever resumed, start with simulation, then paper
+  account, then a human-confirmed one-click checklist. Never jump to unattended
+  live orders.
 
 ## Capital Target Handling
 
