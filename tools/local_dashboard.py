@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import importlib.util
 import json
 import math
+import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +28,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "reports" / "latest.json"
 REPORT_MD = ROOT / "reports" / "latest.md"
+IFIND_CLEAN_DIR = ROOT / "reports" / "ifind_clean"
 JOURNAL = ROOT / "data" / "paper_trade_journal.csv"
 OPTION_JOURNAL = ROOT / "data" / "option_sim_journal.csv"
 BROKER = ROOT / "data" / "broker_account_snapshots.json"
@@ -38,6 +41,7 @@ YUHENG = ROOT / "data" / "latest_yuheng_probe.json"
 LEARNING = ROOT / "reports" / "learning_intake.md"
 POST_CLOSE = ROOT / "data" / "post_close_system_snapshot.json"
 PROFIT_TARGETS = ROOT / "data" / "profit_targets.json"
+DAILY_REVIEWS = ROOT / "reviews" / "daily"
 
 REFRESH_LOCK = threading.Lock()
 REFRESH_PROCESS: subprocess.Popen | None = None
@@ -79,9 +83,20 @@ def latest_backtest_path() -> Path:
     return rows[-1] if rows else ROOT / "reports" / "ifind_position_backtest_missing.json"
 
 
+def latest_ifind_clean_radar_path() -> Path:
+    rows = sorted(IFIND_CLEAN_DIR.glob("*_ifind_clean_radar.json"), key=lambda p: p.stat().st_mtime)
+    return rows[-1] if rows else IFIND_CLEAN_DIR / "ifind_clean_radar_missing.json"
+
+
 def latest_ifind_sample_path() -> Path:
     rows = sorted((ROOT / "data").glob("ifind_realtime_20_sample*.json"), key=lambda p: p.stat().st_mtime)
-    return rows[-1] if rows else ROOT / "data" / "ifind_realtime_20_sample.json"
+    if rows:
+        return rows[-1]
+    # quick20 now writes the realtime sample into latest_ifind_http_probe.json.
+    # Fall back to it so the dashboard does not show an empty sample card.
+    if IFIND_PROBE.exists():
+        return IFIND_PROBE
+    return ROOT / "data" / "ifind_realtime_20_sample.json"
 
 
 def as_float(value, default: float = 0.0) -> float:
@@ -191,6 +206,17 @@ def source_card(title: str, meta: str, strong: str, note: str = "", tone: str = 
     """
 
 
+def prose_card(title: str, lines: list[str], meta: str = "", tone: str = "") -> str:
+    body = "".join(f"<p>{esc(line)}</p>" for line in lines if line)
+    return f"""
+    <article class="source-card prose {esc(tone)}">
+      <div class="source-title">{esc(title)}</div>
+      {f'<div class="source-meta">{esc(meta)}</div>' if meta else ''}
+      {body}
+    </article>
+    """
+
+
 def status_source_card(title: str, badge: str, meta: str, strong: str, note: str = "", tone: str = "") -> str:
     return f"""
     <article class="source-card {esc(tone)}">
@@ -261,17 +287,155 @@ def monthly_goal_snapshot(profit_targets: dict, broker: dict, report: dict) -> t
     return target, progress, gap, days_left, ""
 
 
-def build_top_sync(report: dict, broker: dict, ifind_probe: dict, ifind_sample: dict) -> str:
+def clean_backtest_status(code: str, backtest_by_code: dict[str, dict]) -> tuple[str, str, str]:
+    row = backtest_by_code.get(str(code)) or {}
+    if not row:
+        return "未回测", "当前回测文件还没覆盖这只，先按观察处理。", "warn"
+    sample = row.get("similar_backtest") or {}
+    win1 = pct(as_float(sample.get("next1_win_rate")) * 100)
+    med2 = pct(as_float(sample.get("next2_median")) * 100)
+    return "已回测", f"1日胜率 {win1}；2日中位 {med2}；状态 {row.get('regime') or '-'}。", "ok"
+
+
+def clean_holding_action(item: dict) -> tuple[str, str, str]:
+    close = as_float(item.get("close"), math.nan)
+    stop_loss = as_float(item.get("stop_loss"), math.nan)
+    sell_above = as_float(item.get("sell_above"), math.nan)
+    buy_below = as_float(item.get("buy_below"), math.nan)
+    pnl = as_float(item.get("pnl"))
+    trend_score = as_float(item.get("trend_score"))
+    if not math.isnan(stop_loss) and not math.isnan(close) and close <= stop_loss:
+        return "卖", "danger", f"跌到止损线附近，先按 {fmt_price(stop_loss)} 风险线处理。"
+    if not math.isnan(sell_above) and not math.isnan(close) and close >= sell_above:
+        return "减/卖", "warn", f"到处理线附近，先看 {fmt_price(sell_above)} 一带减压或止盈。"
+    if not math.isnan(buy_below) and not math.isnan(close) and close <= buy_below:
+        return "等", "warn", f"碰到计划买线 {fmt_price(buy_below)}，但先不自动加仓，要等明日确认。"
+    if trend_score < 0 and pnl <= 0:
+        return "等/减反弹", "warn", "趋势偏弱且浮亏，优先等反弹减压，不做摊平。"
+    if pnl > 0:
+        return "持有", "ok", "利润仓继续看承接，不追着加。"
+    return "等", "warn", "先看修复，不抢动作。"
+
+
+def clean_watch_action(item: dict) -> tuple[str, str, str]:
+    change = as_float(item.get("change"))
+    dist_ma20 = as_float(item.get("dist_ma20"))
+    trend_score = as_float(item.get("trend_score"))
+    amount_ratio = as_float(item.get("amount_ratio"))
+    ret20 = as_float(item.get("ret20"))
+    if change >= 5 or dist_ma20 >= 4 or ret20 >= 15:
+        return "不做", "danger", "明天默认不追高，只留强势观察。"
+    if trend_score >= 4 and amount_ratio >= 1 and dist_ma20 > 0:
+        return "等", "ok", "只等回踩确认，再决定要不要出新动作卡。"
+    if trend_score >= 2 and dist_ma20 > 0:
+        return "等", "warn", "结构还行，但还不到直接买的程度。"
+    return "不做", "warn", "走势不够干净，先排除。"
+
+
+def build_ifind_clean_panel(clean_radar: dict, backtest: dict) -> str:
+    if not clean_radar or clean_radar.get("_error"):
+        return section(
+            "Clean Radar 动作台",
+            "缺少干净 iFind 报告",
+            '<div class="empty">先运行 python tools\\ifind_clean_radar.py，再刷新网页。</div>',
+            "clean-radar",
+        )
+
+    items = clean_radar.get("items") or []
+    holdings = [item for item in items if as_float(item.get("shares")) > 0]
+    watch = [item for item in items if as_float(item.get("shares")) <= 0]
+    strong_watch = sorted(
+        [item for item in watch if as_float(item.get("trend_score")) >= 2 and as_float(item.get("dist_ma20")) > 0],
+        key=lambda item: (-as_float(item.get("trend_score")), -as_float(item.get("change")), -as_float(item.get("amount_ratio"))),
+    )
+    backtest_by_code = {str(row.get("code")): row for row in (backtest.get("summaries") or [])}
+    latest_path = latest_ifind_clean_radar_path()
+    metrics = [
+        card("Clean Radar", clean_radar.get("generated_at") or "-", f"文件 {file_time(latest_path)}；工作台优先信这个。", "ok"),
+        card("持仓动作卡", str(len(holdings)), "先处理旧仓，不因旧 etf_radar 再误判。", "ok"),
+        card("强势观察", str(len(strong_watch[:6])), "只保留明天还值得盯的强势票。", "ok" if strong_watch else "warn"),
+        card("明日新开仓", "等", "默认不追高，只在回踩确认后再给新动作卡。", "warn"),
+    ]
+
+    holding_cards = []
+    ranked_holdings = sorted(
+        holdings,
+        key=lambda item: (
+            0 if as_float(item.get("close")) <= as_float(item.get("stop_loss"), math.inf) else 1,
+            0 if as_float(item.get("close")) >= as_float(item.get("sell_above"), math.inf) else 1,
+            as_float(item.get("trend_score")),
+            as_float(item.get("pnl")),
+        ),
+    )
+    for item in ranked_holdings:
+        action, tone, headline = clean_holding_action(item)
+        holding_cards.append(
+            status_source_card(
+                f"{item.get('code')} {item.get('name') or ''}",
+                action,
+                f"现价 {fmt_price(item.get('close'))} | 仓位 {pct(item.get('weight'))} | 浮盈亏 {fmt_money(item.get('pnl'), 0)}",
+                headline,
+                f"止损 {fmt_price(item.get('stop_loss'))}；处理线 {fmt_price(item.get('sell_above'))}；备注 {item.get('note') or '-'}",
+                tone,
+            )
+        )
+
+    watch_cards = []
+    for item in strong_watch[:6]:
+        action, tone, headline = clean_watch_action(item)
+        bt_badge, bt_note, bt_tone = clean_backtest_status(str(item.get("code") or ""), backtest_by_code)
+        note = (
+            f"5日 {pct(item.get('ret5'))}；20日 {pct(item.get('ret20'))}；离 MA20 {pct(item.get('dist_ma20'))}；"
+            f"量能 5/20 {as_float(item.get('amount_ratio')):.2f}；{bt_note}"
+        )
+        if bt_badge == "未回测" and tone == "ok":
+            tone = "warn"
+        watch_cards.append(
+            status_source_card(
+                f"{item.get('code')} {item.get('name') or ''}",
+                f"{action} / {bt_badge}",
+                f"涨跌 {pct(item.get('change'))} | 趋势分 {fmt_number(item.get('trend_score'), 0)} | 成交额 {fmt_money(item.get('amount'), 0)}",
+                headline,
+                note,
+                "ok" if bt_tone == "ok" and tone == "ok" else tone,
+            )
+        )
+
+    coverage_note = ""
+    missing_backtests = [item.get("code") for item in strong_watch[:6] if str(item.get("code") or "") not in backtest_by_code]
+    if missing_backtests:
+        coverage_note = (
+            '<div class="decision-note"><strong>回测覆盖提醒：</strong>'
+            f"当前短线回测文件还没覆盖 {esc(' / '.join(str(code) for code in missing_backtests))}，"
+            "所以这些强势票先只给“等 / 不做”，不直接升级成明日买入。</div>"
+        )
+
+    body = (
+        metric_grid(metrics)
+        + '<div class="decision-note"><strong>明日结论：</strong>新票默认 `等`，不追今天已经急拉的强势股；先处理旧弱仓，只对回踩确认的强势观察票再补新动作卡。</div>'
+        + "<h3>持仓动作卡</h3>"
+        + (source_grid(holding_cards) if holding_cards else '<div class="empty">当前没有持仓动作卡。</div>')
+        + "<h3>强势观察</h3>"
+        + (source_grid(watch_cards) if watch_cards else '<div class="empty">当前没有强势观察票。</div>')
+        + coverage_note
+    )
+    subtitle = f"来源 {clean_radar.get('source') or 'iFind HTTP only'}；文件 {latest_path.name}"
+    return section("Clean Radar 动作台", subtitle, body, "clean-radar")
+
+
+def build_top_sync(report: dict, broker: dict, ifind_probe: dict, ifind_sample: dict, clean_radar: dict) -> str:
     meta = report.get("metadata") or {}
     snap = latest_snapshot(broker)
     probe_time = ifind_probe.get("generated_at") or "-"
     sample_time = ifind_sample.get("generated_at") or "-"
+    clean_time = clean_radar.get("generated_at") or "-"
     stale = is_stale(report)
     status = "旧报告，仅复盘" if stale else "新鲜，可复核"
-    command = f'cd "{ROOT}"; $env:MONITOR_SEND_EMAIL="false"; python monitor.py; python tools\\ifind_http_probe.py --all --wencai'
+    command = f'cd "{ROOT}"; $env:PYTHONIOENCODING="utf-8"; python .\\tools\\ifind_clean_radar.py; python .\\tools\\ifind_http_probe.py --all --wencai'
     items = [
-        card("工作台状态", status, f"页面渲染 {datetime.now():%Y-%m-%d %H:%M:%S}", "warn" if stale else "ok"),
-        card("结构化报告", meta.get("generated_at") or "-", f"文件 {file_time(REPORT)}；执行只看 latest.json", "warn" if stale else "ok"),
+        card("工作台状态", "Clean Radar 优先", f"页面渲染 {datetime.now():%Y-%m-%d %H:%M:%S}", "ok"),
+        card("Clean Radar", clean_time, f"文件 {file_time(latest_ifind_clean_radar_path())}；动作卡和强势观察都看它。", "ok"),
+        card("结构化报告", meta.get("generated_at") or "-", f"文件 {file_time(REPORT)}；latest.json 现在只作旧链路参考。", "warn" if stale else ""),
         card("券商快照", snap.get("snapshot_time") or "-", f"来源 {snap.get('source') or '-'}；持仓和可卖数量优先级最高", "ok"),
         card("iFind实时样本", sample_time, f"探针 {probe_time}；刷新后才允许盘中复核", "warn" if stale else "ok"),
     ]
@@ -502,7 +666,7 @@ def build_tomorrow_plan(broker: dict, backtest: dict) -> str:
 def check_status(checks: dict, key: str) -> str:
     item = checks.get(key)
     if item is None:
-        return "未探测"
+        return "本轮未运行"
     return "已接通" if item.get("ok") else "未接通"
 
 
@@ -522,14 +686,14 @@ def check_tone(checks: dict, key: str) -> str:
 def probe_note(probe: dict, key: str) -> str:
     item = (probe.get("checks") or {}).get(key)
     if item is None:
-        return "这次没有跑到这一项探针，先别把它当成接口故障。"
+        return "本轮没有执行这一项；这表示未运行，不表示接口坏了。"
     return "辅助决策位置已映射到本地工作台。"
 
 
 def probe_meta(probe: dict, key: str) -> str:
     item = (probe.get("checks") or {}).get(key)
     if item is None:
-        return f"rows~-；{probe.get('generated_at') or '-'}；未探测"
+        return f"rows~-；{probe.get('generated_at') or '-'}；未运行"
     rows = item.get("row_estimate")
     return f"rows~{rows if rows is not None else '-'}；{probe.get('generated_at') or '-'}"
 
@@ -824,10 +988,25 @@ def build_toolchain_status(snapshot: dict) -> str:
     vibe = toolchain.get("vibe_trading") or {}
     lean = toolchain.get("quantconnect_lean") or {}
     finance = toolchain.get("finance_skills") or {}
-    routes = finance.get("routing") or []
+    skill_root = Path.home() / ".codex" / "skills"
+    core_skills = [
+        "personal-quant-command-center",
+        "tonghuashun-ifind-skill",
+        "vibe-trading",
+        "quantconnect-lean",
+        "trade-journal",
+        "factor-research",
+        "risk-analysis",
+    ]
+    installed_skills = [name for name in core_skills if (skill_root / name).exists()]
+    routes = finance.get("routing") or installed_skills
+    lean_cli = lean.get("cli_version") or ("已安装" if shutil.which("lean") else "-")
+    docker_cli = lean.get("docker_image") or ("已安装" if shutil.which("docker") else "-")
+    vibe_skill_installed = (skill_root / "vibe-trading").exists()
+    vibe_py_installed = importlib.util.find_spec("vibe_trading") is not None
     rows = [
-        source_card("Vibe-Trading", f"installed={vibe.get('installed', False)} / {vibe.get('version') or '-'}", vibe.get("role") or "trade journal, shadow account, factor research", "盘后交易日志、影子账户、因子/回测研究固定进入展示盘面。", "ok" if vibe.get("installed") else "warn"),
-        source_card("QuantConnect LEAN", f"cli={lean.get('cli_version') or '-'} / docker={lean.get('docker_image') or '-'}", "sample backtest passed" if lean.get("sample_backtest_passed") else "waiting for validation", lean.get("role") or "local research/backtest engine", "ok" if lean.get("sample_backtest_passed") else "warn"),
+        source_card("Vibe-Trading", f"skill={vibe_skill_installed} / python包={vibe_py_installed}", vibe.get("role") or "trade journal, shadow account, factor research", "Codex skill 已安装时可用于研究流程；Python 包未装不等于 skill 没装，只是本项目运行时暂不能 import。", "ok" if vibe_skill_installed else "warn"),
+        source_card("QuantConnect LEAN", f"cli={lean_cli} / docker={docker_cli}", "sample backtest passed" if lean.get("sample_backtest_passed") else "本机 CLI 已可用，样例回测待验证", lean.get("role") or "local research/backtest engine", "ok" if shutil.which("lean") and shutil.which("docker") else "warn"),
         source_card("金融 skill 路由", f"{len(routes)} 个核心路由", " / ".join(routes[:6]) if routes else "未录入", "后续回答买卖、复盘、风控、回测时按这些技能分流。", "ok" if routes else "warn"),
         source_card("展示规则", "已接入", "每次盘面显示数据源、工具链、是否验证、下一步用途", "避免 skill 只是安装了但没有进入日常决策流。", "ok"),
     ]
@@ -932,15 +1111,32 @@ def build_journal(rows: list[dict[str, str]]) -> str:
     recent = rows[-20:][::-1]
     cards = []
     for row in recent:
+        code_name = f"{row.get('code')} {row.get('name')}".strip()
+        is_no_trade = str(row.get("grade") or "").upper() == "NO_TRADE" or as_float(row.get("planned_shares")) <= 0
+        planned = f"计划 {row.get('planned_capital') or '-'} 元 / {row.get('planned_shares') or '-'} 股。"
+        levels = f"观察区 {fmt_price(row.get('entry_low'))}-{fmt_price(row.get('entry_high'))}；止盈 {fmt_price(row.get('take_profit_1'))}/{fmt_price(row.get('take_profit_2'))}；止损 {fmt_price(row.get('stop_loss'))}。"
+        if is_no_trade:
+            actual = "没有实际成交，因为这条卡的结论就是不做。"
+            result = "PnL 不计算；后续看它次日表现，用来判断过滤条件是不是太严或太松。"
+        else:
+            actual = f"实际买入 {row.get('actual_entry_price') or '-'}；实际卖出 {row.get('actual_exit_price') or '-'}。"
+            result = f"结果 {row.get('outcome') or '-'}；PnL {row.get('pnl') or '-'}。"
+        review = row.get("review") or "还没有成交和复盘字段；这条先作为 no-trade 样本，后续继续轮动回测它有没有错过机会。"
         cards.append(
-            source_card(
-                f"{row.get('code')} {row.get('name')}",
-                f"{row.get('date')} | {row.get('decision')} | {row.get('grade')}",
-                f"计划 {row.get('planned_capital') or '-'} 元 / {row.get('planned_shares') or '-'} 股；实际买 {row.get('actual_entry_price') or '-'} / 卖 {row.get('actual_exit_price') or '-'}",
-                f"结果 {row.get('outcome') or '-'}；PnL {row.get('pnl') or '-'}；复盘 {row.get('review') or '-'}",
+            prose_card(
+                code_name,
+                [
+                    f"{row.get('date')}，结论是 {row.get('decision') or '-'}，等级 {row.get('grade') or '-'}。",
+                    planned,
+                    levels,
+                    f"不做原因：{row.get('reason') or '-'}",
+                    actual,
+                    result,
+                    f"复盘：{review}",
+                ],
             )
         )
-    return section("模拟交易日志", "闭环需要补 actual entry / exit / review", source_grid(cards), "journal")
+    return section("模拟交易日志", "没买的票也保留样本，继续轮动回测和复盘", source_grid(cards), "journal")
 
 
 def build_daily_learning_cards(report: dict, broker: dict, journal: list[dict[str, str]], backtest: dict) -> str:
@@ -1027,21 +1223,76 @@ def build_learning_preview(report: dict, broker: dict, journal: list[dict[str, s
     text = ""
     if LEARNING.exists():
         try:
-            text = LEARNING.read_text(encoding="utf-8")[:1200]
+            text = LEARNING.read_text(encoding="utf-8")
         except Exception:
             text = ""
+    learning_cards = []
+    if text:
+        current_title = "学习报告"
+        current_lines: list[str] = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                if current_lines:
+                    learning_cards.append(prose_card(current_title, current_lines[:8], file_time(LEARNING)))
+                current_title = line.lstrip("#").strip() or "学习报告"
+                current_lines = []
+                continue
+            if line.startswith("|"):
+                continue
+            current_lines.append(line)
+        if current_lines:
+            learning_cards.append(prose_card(current_title, current_lines[:8], file_time(LEARNING)))
+    else:
+        learning_cards.append(source_card("学习报告", file_time(LEARNING), "学习摄取未生成，运行 python tools\\learning_intake.py。"))
     body = (
         '<div class="decision-note"><strong>每天都要更新的卡片：</strong>根据当天成交、持仓、盈亏口径、回测结果自动查漏补缺。资料库只做输入，真正重要的是今天哪里没做好、明天怎么修。</div>'
         + build_daily_learning_cards(report, broker, journal, backtest)
+        + "<h3>白话学习报告</h3>"
+        + source_grid(learning_cards[:8])
         + "<h3>研究资料库</h3>"
         + source_grid([
             source_card("QuantConnect Strategies", "策略库/研究流水线参考", "可借鉴它的 Strategy Explorer、Research Pipeline、回测和样本外表现组织方式。", "本地落地：不是照搬美股策略，而是给每张A股动作卡增加假设、回测、纸面交易、复盘字段。"),
             source_card("vectorbt / backtesting.py", "回测工具", "把动作卡规则变成胜率、回撤、触发条件，而不是凭感觉追单。"),
             source_card("OpenBB / Lean / 金融Agent参考", "架构参考", "学习数据接入、研究命令、人工签字和复盘流水线。"),
-            source_card("学习报告", file_time(LEARNING), text or "学习摄取未生成，运行 python tools\\learning_intake.py。"),
         ])
     )
     return section("学习摄取与研究库", "每天按盘面表现查漏补缺，而不是静态贴资料", body, "learning")
+
+
+def build_daily_maintenance_records() -> str:
+    files = sorted(DAILY_REVIEWS.glob("*_trade_review.md"), key=lambda p: p.name, reverse=True) if DAILY_REVIEWS.exists() else []
+    cards = []
+    for path in files[:8]:
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except Exception:
+            continue
+        title = path.stem.replace("_trade_review", " 维护复盘")
+        lines = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("|") or line.startswith("---"):
+                continue
+            if line.startswith("#"):
+                title = line.lstrip("#").strip() or title
+                continue
+            if line.startswith("## "):
+                lines.append(line.lstrip("#").strip())
+                continue
+            lines.append(line.lstrip("- ").strip())
+            if len(lines) >= 10:
+                break
+        cards.append(prose_card(title, lines or ["这天有维护记录，但正文暂未解析。"], file_time(path)))
+    if not cards:
+        cards.append(source_card("暂无每日维护记录", str(DAILY_REVIEWS), "收盘后写入 reviews/daily/YYYY-MM-DD_trade_review.md。", "这里会展示系统改动、交易复盘、明日规则和数据缺口。", "warn"))
+    body = (
+        '<div class="decision-note"><strong>维护记录用途：</strong>每天不只看买卖结果，还要记录系统哪里改了、哪条纪律有效、哪条规则明天要更硬。</div>'
+        + source_grid(cards, "wide")
+    )
+    return section("每日维护记录", "最近盘后复盘、系统更新和明日修正规则", body, "maintenance")
 
 
 def build_html() -> str:
@@ -1051,6 +1302,7 @@ def build_html() -> str:
     eastmoney = read_json(EASTMONEY_PROBE)
     ifind_probe = read_json(IFIND_PROBE)
     ifind_sample = read_json(latest_ifind_sample_path())
+    clean_radar = read_json(latest_ifind_clean_radar_path())
     ifind_usage = read_json(IFIND_USAGE)
     xingyao = read_json(XINGYAO)
     yuheng = read_json(YUHENG)
@@ -1060,7 +1312,8 @@ def build_html() -> str:
     meta = report.get("metadata") or {}
     title = meta.get("subject") or "本地交易工作台"
     html_body = f"""
-    {build_top_sync(report, broker, ifind_probe, ifind_sample)}
+    {build_top_sync(report, broker, ifind_probe, ifind_sample, clean_radar)}
+    {build_ifind_clean_panel(clean_radar, backtest)}
     {build_execution_panel(report, broker, eastmoney, ifind_probe, ifind_sample, xingyao, profit_targets)}
     {build_holdings_table(broker)}
     {build_action_cards(report, broker, post_close)}
@@ -1079,6 +1332,7 @@ def build_html() -> str:
     {build_options(report, xingyao, yuheng)}
     {build_ai_summary(report)}
     {build_journal(journal)}
+    {build_daily_maintenance_records()}
     {build_learning_preview(report, broker, journal, backtest)}
     <footer>数据文件：{esc(REPORT)} / {esc(REPORT_MD)} / {esc(JOURNAL)}。本页仅用于本地模拟、纪律提醒和复盘，不连接真实券商、不自动下单。</footer>
     """
@@ -1092,7 +1346,8 @@ def build_html() -> str:
 </head>
 <body>
   <nav>
-    <strong>收益作战台</strong>
+    <strong>iFind A股盘中工作台</strong>
+    <a href="#clean-radar">清洁雷达</a>
     <a href="#execution">执行</a>
     <a href="#holdings">持仓</a>
     <a href="#cards">动作卡</a>
@@ -1103,6 +1358,7 @@ def build_html() -> str:
     <a href="#backtest">回测</a>
     <a href="#ifind">iFind</a>
     <a href="#data-upgrade">升级</a>
+    <a href="#maintenance">维护</a>
     <a href="#toolchain">工具链</a>
   </nav>
   <main>{html_body}</main>
@@ -1157,6 +1413,11 @@ def styles() -> str:
     .metric.danger, .source-card.danger { background: var(--soft-red); border-color: #f1a29b; }
     .source-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
     .source-grid.compact, .source-grid.interfaces { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .source-grid.wide, #maintenance .source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    #journal .source-grid, #learning .source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    #learning .source-grid:first-of-type { grid-template-columns: 1fr; }
+    .source-card.prose { padding: 14px 16px; }
+    .source-card.prose p { color: var(--ink); font-size: 14px; line-height: 1.65; }
     .source-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
     .source-title { font-weight: 900; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
     .source-card strong { display: block; margin-top: 7px; color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
@@ -1180,13 +1441,13 @@ def styles() -> str:
     .empty { margin-top: 12px; padding: 18px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; }
     footer { margin: 18px 0 28px; color: var(--muted); font-size: 12px; }
     @media (max-width: 1100px) {
-      .metric-grid, .top-grid, .source-grid, .source-grid.compact, .source-grid.interfaces { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric-grid, .top-grid, .source-grid, .source-grid.compact, .source-grid.interfaces, .source-grid.wide, #journal .source-grid, #learning .source-grid, #maintenance .source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .hero { grid-template-columns: 1fr; }
       .command-box { grid-template-columns: 1fr; }
     }
     @media (max-width: 720px) {
       main { padding: 10px; }
-      .metric-grid, .top-grid, .source-grid, .source-grid.compact, .source-grid.interfaces { grid-template-columns: 1fr; }
+      .metric-grid, .top-grid, .source-grid, .source-grid.compact, .source-grid.interfaces, .source-grid.wide, #journal .source-grid, #learning .source-grid, #maintenance .source-grid { grid-template-columns: 1fr; }
       .panel-header { flex-direction: column; }
       h1 { font-size: 24px; }
     }
@@ -1232,6 +1493,7 @@ def refresh_status() -> dict:
         "refresh_running": running,
         "refresh_started_at": REFRESH_STARTED_AT,
         "report_mtime": file_time(REPORT),
+        "clean_radar_mtime": file_time(latest_ifind_clean_radar_path()),
         "broker_snapshot_time": snap.get("snapshot_time") or "-",
         "eastmoney_probe_mtime": file_time(EASTMONEY_PROBE),
         "ifind_probe_mtime": file_time(IFIND_PROBE),
@@ -1249,11 +1511,12 @@ def start_refresh() -> dict:
         refresh_code = (
             "import os, subprocess, sys; "
             "os.environ['MONITOR_SEND_EMAIL']='false'; "
+            "os.environ['PYTHONIOENCODING']='utf-8'; "
             "steps=["
-            "('eastmoney probe',[sys.executable,'tools/eastmoney_probe.py'],60),"
             "('ifind quick20 before',[sys.executable,'tools/ifind_http_probe.py','--quick20'],90),"
             "('yuheng probe',[sys.executable,'tools/yuheng_probe.py'],60),"
-            "('monitor',[sys.executable,'monitor.py'],240),"
+            "('xingyao probe',[sys.executable,'tools/xingyao_data_probe.py'],60),"
+            "('ifind clean radar',[sys.executable,'tools/ifind_clean_radar.py'],180),"
             "('ifind full probe',[sys.executable,'tools/ifind_http_probe.py','--all','--wencai'],180)"
             "]; "
             "\nfor name, cmd, timeout in steps:\n"
@@ -1313,7 +1576,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
+    parser.add_argument("--write-preview", default="", help="Write the rendered HTML to a file and exit")
     args = parser.parse_args()
+    if args.write_preview:
+        preview_path = Path(args.write_preview)
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        preview_path.write_text(build_html(), encoding="utf-8")
+        print(f"local_dashboard_preview={preview_path}")
+        return 0
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Local dashboard listening on http://{args.host}:{args.port}/")
     try:
