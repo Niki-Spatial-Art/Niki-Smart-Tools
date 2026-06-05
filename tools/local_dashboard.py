@@ -1025,6 +1025,53 @@ def build_research_skill_plan() -> str:
     return section("研究技能与盘面回测", "具体能力要落到辅助决策", source_grid(cards), "research")
 
 
+def build_showcase_notes() -> str:
+    cards = [
+        prose_card(
+            "对外一句话",
+            [
+                "这是一个基于 iFind 的 A股盘中交易决策工作台：盘前计划、盘中动作卡、持仓风控、回测复盘和每日维护记录放在一个本地页面里。",
+                "它不连接券商、不自动下单，只做数据整理、风险线和人工确认前的决策辅助。",
+            ],
+            "适合下午交流时开场介绍",
+            "ok",
+        ),
+        prose_card(
+            "iFind 授权边界",
+            [
+                "别人不能使用你的 iFind 接口；公开仓库只提供框架和探针，每个使用者要配置自己的 iFind token。",
+                "没有 iFind 也能作为交易纪律模板运行，但实时行情、历史回测、公告闸门和智能选股会降级，不能输出高置信买入动作卡。",
+            ],
+            "docs/ifind_auth_and_privacy.md",
+            "warn",
+        ),
+        prose_card(
+            "阿里云 API",
+            [
+                "当前已接入的是通义千问 / DashScope OpenAI-compatible Chat Completions，用于中文策略简报、风险提醒和盘后总结。",
+                "默认 provider=qwen，模型 qwen-plus，环境变量 DASHSCOPE_API_KEY，端点 https://dashscope.aliyuncs.com/compatible-mode/v1。",
+                "当前没有使用阿里云 ECS、RDS、MongoDB、OSS、函数计算或向量检索。",
+            ],
+            "docs/alicloud_api_usage.md",
+        ),
+        prose_card(
+            "优秀案例借鉴",
+            [
+                "OpenBB：借鉴金融数据统一入口和 AI Agent 友好的数据平台思路。",
+                "QuantConnect LEAN：借鉴研究、回测、执行分层，以及策略必须可验证的工程流程。",
+                "Freqtrade：借鉴 dry-run、回测、风险保护、配置边界和 WebUI 思路。",
+                "MongoDB / AI Search：借鉴更少架构的方向，未来可把动作卡、复盘和公告摘要做成统一检索层。",
+            ],
+            "docs/reference_cases.md",
+        ),
+    ]
+    body = (
+        '<div class="decision-note"><strong>会场说明：</strong>这部分用于快速介绍项目边界、阿里云 API 使用和参考案例；适合演示前先过一遍。</div>'
+        + source_grid(cards, "wide")
+    )
+    return section("会场说明", "iFind边界、阿里云API、优秀案例和少架构定位", body, "showcase")
+
+
 def build_market_structure(report: dict) -> str:
     policy = report.get("market_structure_policy") or {}
     structure = read_json(IFIND_STRUCTURE)
@@ -1326,6 +1373,7 @@ def build_html() -> str:
     {build_ifind_use_plan(ifind_usage, ifind_probe)}
     {build_data_upgrade_plan(report, ifind_probe, xingyao, yuheng)}
     {build_toolchain_status(post_close)}
+    {build_showcase_notes()}
     {build_research_skill_plan()}
     {build_market_structure(report)}
     {build_etf_radar(report)}
@@ -1358,6 +1406,7 @@ def build_html() -> str:
     <a href="#backtest">回测</a>
     <a href="#ifind">iFind</a>
     <a href="#data-upgrade">升级</a>
+    <a href="#showcase">会场</a>
     <a href="#maintenance">维护</a>
     <a href="#toolchain">工具链</a>
   </nav>
