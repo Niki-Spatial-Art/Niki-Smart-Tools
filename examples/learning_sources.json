@@ -49,6 +49,12 @@
       "why_watch": "Small and readable backtesting API that fits this project's current scale."
     },
     {
+      "name": "cvxportfolio",
+      "type": "github",
+      "url": "https://github.com/cvxgrp/cvxportfolio",
+      "why_watch": "Research-first portfolio optimization and backtesting library with transaction-cost, constraint, and causality patterns that fit ETF allocation and risk-budget experiments."
+    },
+    {
       "name": "PyBroker",
       "type": "github",
       "url": "https://github.com/edtechre/pybroker",
@@ -241,6 +247,12 @@
       "why_watch": "Options, rates, and risk-modeling reference for future option-simulation improvements."
     },
     {
+      "name": "options_portfolio_backtester",
+      "type": "github",
+      "url": "https://github.com/lambdaclass/options_portfolio_backtester",
+      "why_watch": "Options-and-equity portfolio backtesting reference with Greeks-aware risk limits, multi-leg presets, and contract-level inventory handling for simulation-only options research."
+    },
+    {
       "name": "OCC Options Disclosure Document",
       "type": "article",
       "url": "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document",
@@ -263,6 +275,18 @@
       "type": "article",
       "url": "https://www.cboe.com/optionsinstitute/learningportal/",
       "why_watch": "Official listed-options education portal with structured derivatives courses, Greeks, and volatility learning paths to ground options research before adding complexity."
+    },
+    {
+      "name": "SSE Stock Options Hub",
+      "type": "article",
+      "url": "https://www.sse.com.cn/assortment/options/",
+      "why_watch": "Official Shanghai Stock Exchange stock-options portal covering China ETF option contracts, rules, investor education, and risk-control references for A-share options research."
+    },
+    {
+      "name": "SZSE Options Overview",
+      "type": "article",
+      "url": "https://www.szse.cn/www/English/products/options/overview/",
+      "why_watch": "Official Shenzhen Stock Exchange options overview for ETF-option milestones, rule links, and market-structure context when comparing Shanghai and Shenzhen option products."
     },
     {
       "name": "CCXT",
