@@ -1049,7 +1049,7 @@ def build_showcase_notes() -> str:
         prose_card(
             "iFind 授权边界",
             [
-                "别人不能使用你的 iFind 接口；公开仓库只提供框架和探针，每个使用者要配置自己的 iFind token。",
+                "公开仓库只提供框架和探针；使用者都须配置自己的 iFind 账号和接口权限。",
                 "没有 iFind 也能作为交易纪律模板运行，但实时行情、历史回测、公告闸门和智能选股会降级，不能输出高置信买入动作卡。",
             ],
             "docs/ifind_auth_and_privacy.md",
@@ -1060,7 +1060,7 @@ def build_showcase_notes() -> str:
             [
                 "当前已接入的是通义千问 / DashScope OpenAI-compatible Chat Completions，用于中文策略简报、风险提醒和盘后总结。",
                 "默认 provider=qwen，模型 qwen-plus，环境变量 DASHSCOPE_API_KEY，端点 https://dashscope.aliyuncs.com/compatible-mode/v1。",
-                "当前没有使用阿里云 ECS、RDS、MongoDB、OSS、函数计算或向量检索。",
+                "当前重点展示百炼 / DashScope 在中文策略简报、风险提醒和盘后复盘里的作用。",
             ],
             "docs/alicloud_api_usage.md",
         ),
@@ -1272,7 +1272,7 @@ def build_daily_learning_cards(report: dict, broker: dict, journal: list[dict[st
         )
     )
     if not lessons:
-        lessons.append(source_card("今日学习卡", latest_date or "-", "暂无交易日志可归因；先补成交和复盘字段。"))
+        lessons.append(source_card("学习结论", latest_date or "-", "暂无交易日志可归因；先补成交和复盘字段。"))
     return source_grid(lessons)
 
 
@@ -1307,7 +1307,7 @@ def build_learning_preview(report: dict, broker: dict, journal: list[dict[str, s
     body = (
         '<div class="decision-note"><strong>每天都要更新的卡片：</strong>根据当天成交、持仓、盈亏口径、回测结果自动查漏补缺。资料库只做输入，真正重要的是今天哪里没做好、明天怎么修。</div>'
         + build_daily_learning_cards(report, broker, journal, backtest)
-        + "<h3>白话学习报告</h3>"
+        + "<h3>简洁学习报告</h3>"
         + source_grid(learning_cards[:8])
         + "<h3>研究资料库</h3>"
         + source_grid([

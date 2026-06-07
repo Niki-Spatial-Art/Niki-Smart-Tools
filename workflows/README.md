@@ -14,6 +14,23 @@
 9. Human reviews actual execution and outcome
 ```
 
+## Research Director SOP
+
+External articles, model ideas, and trading intuition should enter the system
+through a research-director workflow:
+
+```text
+1. User states the market hypothesis in one sentence
+2. AI turns it into a computable factor or theme rule
+3. AI writes or updates the smallest validation script/report
+4. System checks sample size, T+1/T+2/T+5 outcome, drawdown, and redundancy
+5. Only validated ideas can influence action-card wording
+6. Human decides whether to trade and reports execution back to the journal
+```
+
+The AI may implement, test, summarize, and audit. It must not invent alpha,
+promise returns, or place live orders.
+
 ## Offline Demo
 
 Run:

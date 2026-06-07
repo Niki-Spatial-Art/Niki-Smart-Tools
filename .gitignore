@@ -6,6 +6,8 @@ __pycache__/
 portfolio.local.json
 logs/
 reports/
+reviews/
+vendor/
 data/*
 !data/.gitkeep
 !data/README.md

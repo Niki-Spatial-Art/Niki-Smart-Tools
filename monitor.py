@@ -85,6 +85,38 @@ def env_enabled(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+WINDPY_CLIENT = None
+WINDPY_CONNECT_ATTEMPTED = False
+
+
+def wind_enabled() -> bool:
+    return env_enabled("WIND_ENABLED", "false")
+
+
+def windpy_client():
+    global WINDPY_CLIENT, WINDPY_CONNECT_ATTEMPTED
+    if not wind_enabled():
+        raise RuntimeError("WIND_ENABLED is false")
+    if WINDPY_CLIENT is not None:
+        return WINDPY_CLIENT
+    if WINDPY_CONNECT_ATTEMPTED:
+        raise RuntimeError("WindPy unavailable")
+
+    WINDPY_CONNECT_ATTEMPTED = True
+    try:
+        from WindPy import w  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(f"WindPy import failed: {exc}") from exc
+
+    wait_time = int(os.getenv("WIND_WAIT_TIME", "30"))
+    result = w.start(waitTime=wait_time)
+    error_code = getattr(result, "ErrorCode", -1)
+    if error_code != 0 or not w.isconnected():
+        raise RuntimeError(f"WindPy start failed: error={error_code}")
+    WINDPY_CLIENT = w
+    return WINDPY_CLIENT
+
+
 def load_json_file(path: str | Path) -> Dict:
     with open(path, "r", encoding="utf-8-sig") as file:
         return json.load(file)
@@ -362,9 +394,46 @@ def fetch_quote_xingyao(code: str) -> Quote:
     return quote
 
 
+def fetch_quote_wind(code: str) -> Quote:
+    client = windpy_client()
+    result = client.wsq(code, "rt_last,rt_pct_chg,rt_amt,sec_name")
+    error_code = getattr(result, "ErrorCode", -1)
+    if error_code != 0:
+        raise RuntimeError(f"Wind wsq failed: error={error_code}")
+
+    fields = [str(field).upper() for field in (getattr(result, "Fields", None) or [])]
+    data = getattr(result, "Data", None) or []
+    if not fields or not data:
+        raise RuntimeError("Wind wsq returned empty payload")
+
+    payload = {}
+    for idx, field in enumerate(fields):
+        values = data[idx] if idx < len(data) else []
+        payload[field] = values[0] if values else None
+
+    price = safe_float(payload.get("RT_LAST"))
+    pct_change = safe_float(payload.get("RT_PCT_CHG"))
+    amount = safe_float(payload.get("RT_AMT"))
+    name = str(payload.get("SEC_NAME") or code)
+    if price is None:
+        raise RuntimeError("Wind wsq missing RT_LAST")
+
+    ma20, ma60 = fetch_moving_averages(code)
+    return Quote(
+        code=code,
+        name=name,
+        price=price,
+        pct_change=pct_change,
+        amount=amount,
+        ma20=ma20,
+        ma60=ma60,
+    )
+
+
 def fetch_quote(code: str) -> Quote:
     sources = [
         ("xingyao", fetch_quote_xingyao),
+        ("wind", fetch_quote_wind),
         ("eastmoney", fetch_quote_eastmoney),
         ("tencent", fetch_quote_tencent),
         ("sina", fetch_quote_sina),
@@ -373,6 +442,8 @@ def fetch_quote(code: str) -> Quote:
     errors = []
     for source_name, fetcher in sources:
         if source_name == "xingyao" and not env_enabled("XINGYAO_QUOTE_PRIORITY", "false"):
+            continue
+        if source_name == "wind" and not wind_enabled():
             continue
         try:
             quote = fetcher(code)
@@ -2912,6 +2983,8 @@ def evaluate_strategy(item: Dict, portfolio: Dict) -> Dict:
     buy_below = pos.get("buy_below")
     sell_above = pos.get("sell_above")
     stop_loss = pos.get("stop_loss")
+    if buy_below is not None and float(buy_below) <= 0:
+        buy_below = None
 
     reasons = []
     decision = "等待"
@@ -3009,10 +3082,57 @@ def trading_session_context(now: Optional[datetime] = None) -> Dict:
     }
 
 
+def is_a_share_trading_day(now: Optional[datetime] = None) -> tuple[bool, str]:
+    now = now or datetime.now(BEIJING_TZ)
+    if wind_enabled():
+        try:
+            client = windpy_client()
+            day = now.strftime("%Y-%m-%d")
+            result = client.tdays(day, day, "")
+            error_code = getattr(result, "ErrorCode", -1)
+            dates = (getattr(result, "Data", None) or [[]])[0] if getattr(result, "Data", None) else []
+            if error_code == 0:
+                return bool(dates), "wind_tdays"
+            logger.warning("Wind tdays failed: error=%s", error_code)
+        except Exception as exc:
+            logger.warning("Wind trading-day check failed: %s", exc)
+    return now.weekday() < 5, "weekday_fallback"
+
+
 def run_radar() -> Dict:
     high_risk_codes = split_env_set("ETF_HIGH_RISK_CODES", DEFAULT_HIGH_RISK_CODES)
     qdii_codes = split_env_set("ETF_QDII_CODES", DEFAULT_QDII_CODES)
     portfolio = load_portfolio()
+    now = datetime.now(BEIJING_TZ)
+    trading_day, trading_day_source = is_a_share_trading_day(now)
+
+    if not trading_day:
+        return {
+            "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "session": {
+                "label": "休市",
+                "next_decision_time": "下个交易日09:10",
+                "guidance": "休市，不生成动作卡。",
+            },
+            "watch_count": len(combined_watchlist()),
+            "portfolio": portfolio,
+            "results": [],
+            "failures": [],
+            "stock_radar": {"enabled": False, "results": [], "reason": "non-trading day"},
+            "broad_market_scan": {"enabled": False, "results": [], "reason": "non-trading day"},
+            "market_structure": {"enabled": False, "source": trading_day_source, "regime": "MARKET_CLOSED", "notes": ["A-share market closed."]},
+            "market_structure_policy": {"enabled": False, "source": trading_day_source, "regime": "MARKET_CLOSED", "risk_level": "PAUSE", "notes": ["休市，不生成盘中动作卡。"]},
+            "option_sim_radar": {"enabled": False, "results": [], "reason": "non-trading day"},
+            "xingyao_data_status": {"enabled": False, "active_sources": [], "recommendation": "休市，未运行星耀探针。"},
+            "coverage": {"etf_watch_count": len(combined_watchlist()), "coverage_note": f"Trading day check source: {trading_day_source}"},
+            "trading_day": {"is_open": False, "source": trading_day_source},
+            "action_stack": {
+                "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "risk_gate": {"blocked": True, "level": "MARKET_CLOSED", "reason": "休市"},
+                "short_term_cards": [],
+                "option_cards": [],
+            },
+        }
 
     results = []
     failures = []
@@ -3038,7 +3158,6 @@ def run_radar() -> Dict:
     xingyao_data_status = run_xingyao_data_diagnostics(option_sim_radar)
     coverage = coverage_report(watchlist, stock_radar, broad_market_scan, option_sim_radar, xingyao_data_status)
 
-    now = datetime.now(BEIJING_TZ)
     report = {
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "session": trading_session_context(now),
@@ -3053,6 +3172,7 @@ def run_radar() -> Dict:
         "option_sim_radar": option_sim_radar,
         "xingyao_data_status": xingyao_data_status,
         "coverage": coverage,
+        "trading_day": {"is_open": True, "source": trading_day_source},
     }
     report["action_stack"] = build_action_stack(report)
     return report

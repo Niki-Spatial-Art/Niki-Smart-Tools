@@ -11,6 +11,7 @@ The project currently keeps connector logic inside `monitor.py` to avoid prematu
 | Sina | broad-market and single-symbol fallback | useful for A-share fallback scan |
 | Yahoo | additional fallback quote path | useful for some ETF symbols |
 | Xingyao/AmazingData | optional option basics | requires local SDK path and credentials |
+| WindPy | optional trading-day and single-symbol validation | read-only verification layer for trade calendar and key quotes |
 | Public web scraper | optional public-page fetcher | `connectors/public_web_scraper.py`; supports Scrapling if installed and falls back to requests |
 | Local files | portfolio, reports, paper journal | deterministic and auditable |
 

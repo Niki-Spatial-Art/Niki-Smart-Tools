@@ -32,6 +32,12 @@ function Invoke-PythonStep {
 
 Write-Log "Daily research maintenance started"
 
+Invoke-PythonStep -Arguments @("tools/ifind_weekly_budget.py", "--mode", "postclose")
+Invoke-PythonStep -Arguments @("tools/ifind_clean_radar.py")
+Invoke-PythonStep -Arguments @("tools/ifind_position_backtest.py", "--days", "120")
+Invoke-PythonStep -Arguments @("tools/ifind_smart_pick_batch.py", "--limit", "30")
+Invoke-PythonStep -Arguments @("tools/ifind_announcement_gate.py")
+
 $learningArgs = @("tools/learning_intake.py")
 if ($NoNetwork) {
     $learningArgs += "--no-network"
