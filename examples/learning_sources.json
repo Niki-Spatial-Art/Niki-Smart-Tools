@@ -287,6 +287,42 @@
       "type": "community",
       "url": "https://www.vnpy.org/",
       "why_watch": "Chinese quant trading community and docs around event-driven trading systems."
+    },
+    {
+      "name": "PyPortfolioOpt",
+      "type": "github",
+      "url": "https://github.com/PyPortfolio/PyPortfolioOpt",
+      "why_watch": "Portfolio construction reference covering efficient frontier, Black-Litterman, and hierarchical risk parity for ETF basket sizing and risk budgeting."
+    },
+    {
+      "name": "Riskfolio-Lib",
+      "type": "github",
+      "url": "https://github.com/dcajasn/Riskfolio-Lib",
+      "why_watch": "Broader portfolio-optimization and risk-measure library for stress-testing allocation ideas before they influence action cards."
+    },
+    {
+      "name": "skfolio",
+      "type": "github",
+      "url": "https://github.com/skfolio/skfolio",
+      "why_watch": "Scikit-learn style portfolio optimization and cross-validation toolkit useful for robust ETF allocation, model selection, and stress-test workflows."
+    },
+    {
+      "name": "mootdx",
+      "type": "github",
+      "url": "https://github.com/mootdx/mootdx",
+      "why_watch": "Maintained Tongdaxin-compatible A-share data connector for public-market redundancy and field-validation when iFind or web sources disagree."
+    },
+    {
+      "name": "OCC Options Disclosure Document",
+      "type": "article",
+      "url": "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document",
+      "why_watch": "Official options-risk baseline and terminology reference for keeping option simulations and review notes grounded in exchange-traded product mechanics."
+    },
+    {
+      "name": "Alpaca Paper Trading Docs",
+      "type": "article",
+      "url": "https://docs.alpaca.markets/us/docs/paper-trading",
+      "why_watch": "Official paper-trading reference that clearly separates simulation from live execution and documents fill, slippage, and queue-position limits."
     }
   ]
 }

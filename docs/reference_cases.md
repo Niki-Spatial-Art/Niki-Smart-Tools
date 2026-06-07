@@ -46,6 +46,26 @@
 - 没有真实成交时，不计算 PnL，只保留 no-trade 样本。
 - 把“买不买”拆成数据闸门、风险闸门、仓位闸门。
 
+## 组合风险与纸面交易参考
+
+借鉴点：先把组合构建、压力测试、纸面仿真和期权风险说明做扎实，再决定哪些内容值得进入动作卡。
+
+参考链接：
+
+- <https://github.com/PyPortfolio/PyPortfolioOpt>
+- <https://github.com/dcajasn/Riskfolio-Lib>
+- <https://github.com/skfolio/skfolio>
+- <https://github.com/mootdx/mootdx>
+- <https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document>
+- <https://docs.alpaca.markets/us/docs/paper-trading>
+
+落地到本项目：
+
+- ETF 组合不只看涨跌和主题叙事，还要补权重、相关性、回撤和风险预算。
+- A 股公开数据兜底优先补“交叉校验”能力，不把公共连接器直接变成自动下单入口。
+- 期权研究先对齐官方风险披露和术语，再做 Greeks、波动率和情景分析。
+- 纸面交易文档优先吸收“仿真不等于实盘”的限制说明，用来约束复盘口径和动作卡置信度。
+
 ## MongoDB / AI Search 架构思路
 
 借鉴点：AI 应用最好的架构往往是更少的架构。减少外部同步、减少手工 embedding、减少重复系统，能降低维护成本。
