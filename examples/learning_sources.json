@@ -49,6 +49,12 @@
       "why_watch": "Small and readable backtesting API that fits this project's current scale."
     },
     {
+      "name": "PyBroker",
+      "type": "github",
+      "url": "https://github.com/edtechre/pybroker",
+      "why_watch": "Active Python backtesting and research framework with machine-learning workflows, walkforward evaluation, and broker separation that fit research-first experimentation."
+    },
+    {
       "name": "Backtrader",
       "type": "github",
       "url": "https://github.com/mementum/backtrader",
@@ -77,6 +83,24 @@
       "type": "github",
       "url": "https://github.com/ranaroussi/quantstats",
       "why_watch": "Performance tear sheets, drawdown, and return-analysis report ideas."
+    },
+    {
+      "name": "PyPortfolioOpt",
+      "type": "github",
+      "url": "https://github.com/PyPortfolio/PyPortfolioOpt",
+      "why_watch": "Portfolio construction reference covering efficient frontier, Black-Litterman, and hierarchical risk parity for ETF basket sizing and risk budgeting."
+    },
+    {
+      "name": "Riskfolio-Lib",
+      "type": "github",
+      "url": "https://github.com/dcajasn/Riskfolio-Lib",
+      "why_watch": "Broader portfolio-optimization and risk-measure library for stress-testing allocation ideas before they influence action cards."
+    },
+    {
+      "name": "skfolio",
+      "type": "github",
+      "url": "https://github.com/skfolio/skfolio",
+      "why_watch": "Scikit-learn style portfolio optimization and cross-validation toolkit useful for robust ETF allocation, model selection, and stress-test workflows."
     },
     {
       "name": "OpenBB",
@@ -193,6 +217,18 @@
       "why_watch": "A-share data and fundamentals connector candidate; keep credentials in environment and compare against iFind/Eastmoney coverage."
     },
     {
+      "name": "efinance",
+      "type": "github",
+      "url": "https://github.com/Micro-sheep/efinance",
+      "why_watch": "Widely used China-market Python data library covering stocks, funds, and futures; useful as a public cross-check layer for ETF and A-share monitoring when comparing Eastmoney-style fields."
+    },
+    {
+      "name": "mootdx",
+      "type": "github",
+      "url": "https://github.com/mootdx/mootdx",
+      "why_watch": "Maintained Tongdaxin-compatible A-share data connector for public-market redundancy and field-validation when iFind or web sources disagree."
+    },
+    {
       "name": "yfinance",
       "type": "github",
       "url": "https://github.com/ranaroussi/yfinance",
@@ -203,6 +239,30 @@
       "type": "github",
       "url": "https://github.com/lballabio/QuantLib",
       "why_watch": "Options, rates, and risk-modeling reference for future option-simulation improvements."
+    },
+    {
+      "name": "OCC Options Disclosure Document",
+      "type": "article",
+      "url": "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document",
+      "why_watch": "Official options-risk baseline and terminology reference for keeping option simulations and review notes grounded in exchange-traded product mechanics."
+    },
+    {
+      "name": "Alpaca Paper Trading Docs",
+      "type": "article",
+      "url": "https://docs.alpaca.markets/us/docs/paper-trading",
+      "why_watch": "Official paper-trading reference that clearly separates simulation from live execution and documents fill, slippage, and queue-position limits."
+    },
+    {
+      "name": "IBKR Paper Trading Accounts",
+      "type": "article",
+      "url": "https://www.ibkrguides.com/clientportal/aboutpapertradingaccounts.htm",
+      "why_watch": "Official paper-trading limitations reference with details on simulated fills, unsupported order types, and market-data linkage that help keep review notes honest about simulator drift."
+    },
+    {
+      "name": "Cboe Options Institute Learning Portal",
+      "type": "article",
+      "url": "https://www.cboe.com/optionsinstitute/learningportal/",
+      "why_watch": "Official listed-options education portal with structured derivatives courses, Greeks, and volatility learning paths to ground options research before adding complexity."
     },
     {
       "name": "CCXT",
@@ -289,40 +349,52 @@
       "why_watch": "Chinese quant trading community and docs around event-driven trading systems."
     },
     {
-      "name": "PyPortfolioOpt",
-      "type": "github",
-      "url": "https://github.com/PyPortfolio/PyPortfolioOpt",
-      "why_watch": "Portfolio construction reference covering efficient frontier, Black-Litterman, and hierarchical risk parity for ETF basket sizing and risk budgeting."
-    },
-    {
-      "name": "Riskfolio-Lib",
-      "type": "github",
-      "url": "https://github.com/dcajasn/Riskfolio-Lib",
-      "why_watch": "Broader portfolio-optimization and risk-measure library for stress-testing allocation ideas before they influence action cards."
-    },
-    {
-      "name": "skfolio",
-      "type": "github",
-      "url": "https://github.com/skfolio/skfolio",
-      "why_watch": "Scikit-learn style portfolio optimization and cross-validation toolkit useful for robust ETF allocation, model selection, and stress-test workflows."
-    },
-    {
-      "name": "mootdx",
-      "type": "github",
-      "url": "https://github.com/mootdx/mootdx",
-      "why_watch": "Maintained Tongdaxin-compatible A-share data connector for public-market redundancy and field-validation when iFind or web sources disagree."
-    },
-    {
-      "name": "OCC Options Disclosure Document",
+      "name": "Shanghai Stock Exchange ETF Hub",
       "type": "article",
-      "url": "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document",
-      "why_watch": "Official options-risk baseline and terminology reference for keeping option simulations and review notes grounded in exchange-traded product mechanics."
+      "url": "https://www.sse.com.cn/assortment/fund/etf/",
+      "why_watch": "Official SSE ETF portal linking fund information, market data, training, and rule resources for Shanghai-listed ETF monitoring and reference checks."
     },
     {
-      "name": "Alpaca Paper Trading Docs",
+      "name": "Shenzhen Stock Exchange Fund Market Data",
       "type": "article",
-      "url": "https://docs.alpaca.markets/us/docs/paper-trading",
-      "why_watch": "Official paper-trading reference that clearly separates simulation from live execution and documents fill, slippage, and queue-position limits."
+      "url": "https://fund.szse.cn/marketdata/fundslist/index.html",
+      "why_watch": "Official SZSE fund market-data entry point with fund lists, ETF lists, disclosures, and rules useful for Shenzhen ETF coverage validation."
+    },
+    {
+      "name": "AI Quant Research Director SOP",
+      "type": "article",
+      "url": "docs/ai_quant_methodology_intake_2026-06-04.md",
+      "why_watch": "Local methodology card: use AI as implementation analyst, while user defines hypothesis, risk gates, and acceptance criteria."
+    },
+    {
+      "name": "Factor Research Playbook",
+      "type": "article",
+      "url": "docs/factor_research_playbook_2026-06-04.md",
+      "why_watch": "Local factor-validation template for converting trading intuition into computable factors, event studies, and action-card gates."
+    },
+    {
+      "name": "Power Equipment Supercycle Theme Card",
+      "type": "article",
+      "url": "docs/theme_power_equipment_supercycle_2026-06-04.md",
+      "why_watch": "Local theme card for AI data-center power equipment, gas turbine components, and composite insulators; use only as watchlist evidence."
+    },
+    {
+      "name": "Quant Methodology Source Triage 2026-06-04",
+      "type": "article",
+      "url": "docs/quant_methodology_source_triage_2026-06-04.md",
+      "why_watch": "Local triage table for user-pasted quant methodology sources; separates immediate action-card upgrades from long-term research."
+    },
+    {
+      "name": "Self-Evolving Skill Stock Selection Experiment List",
+      "type": "article",
+      "url": "docs/self_evolving_skill_stock_selection_2026-06-04.md",
+      "why_watch": "Local experiment checklist for turning Huatai self-evolving Skill ideas into hypothesis, factor, backtest, audit, and action-card loops."
+    },
+    {
+      "name": "Level2 Informed Trading Proxy Plan",
+      "type": "article",
+      "url": "docs/level2_informed_trading_proxy_2026-06-04.md",
+      "why_watch": "Local proxy plan for Level2 informed-trading factors using iFind volume, amount-ratio, MA-distance, and theme resonance until Level2 is available."
     }
   ]
 }
