@@ -21,6 +21,7 @@ from connectors.ifind_http import IFindHTTPClient
 from tools.local_dashboard import BROKER as DEFAULT_BROKER_SNAPSHOT
 from tools.local_dashboard import REPORT as DEFAULT_REPORT
 from tools.local_dashboard import latest_snapshot, read_json
+import monitor
 
 
 SUFFIX_SH = {"5", "6", "9"}
@@ -111,6 +112,41 @@ def parse_history(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             if not math.isnan(as_float(row.get("close"), math.nan)):
                 rows.append(row)
         out[code] = rows
+    return out
+
+
+def parse_xingyao_history(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in payload.get("rows") or []:
+        code = plain_code(str(row.get("code") or ""))
+        if code:
+            grouped.setdefault(code, []).append(row)
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    for code, rows in grouped.items():
+        normalized: list[dict[str, Any]] = []
+        prev_close = math.nan
+        rows = sorted(rows, key=lambda r: str(r.get("kline_time") or r.get("date") or ""))
+        for row in rows:
+            close = as_float(row.get("close"), math.nan)
+            change = (close / prev_close - 1) * 100 if prev_close and not math.isnan(close) else math.nan
+            row_date = row.get("kline_time") or row.get("date")
+            normalized.append(
+                {
+                    "date": str(row_date) if row_date is not None else "",
+                    "code": code,
+                    "open": as_float(row.get("open"), math.nan),
+                    "high": as_float(row.get("high"), math.nan),
+                    "low": as_float(row.get("low"), math.nan),
+                    "close": close,
+                    "volume": as_float(row.get("volume"), math.nan),
+                    "amount": as_float(row.get("amount"), math.nan),
+                    "changeRatio": change,
+                }
+            )
+            if not math.isnan(close):
+                prev_close = close
+        out[code] = normalized
     return out
 
 
@@ -421,15 +457,36 @@ def main() -> None:
     codes, positions, names, strong_watch = collect_codes(report, broker, portfolio_local, clean_radar)
     end = datetime.today().strftime("%Y-%m-%d")
     start = (datetime.today() - timedelta(days=args.days)).strftime("%Y-%m-%d")
-    client = IFindHTTPClient()
-    payload = client.history_quotes(
-        codes,
-        indicators="open,high,low,close,volume,amount,changeRatio",
-        start_date=start,
-        end_date=end,
-        functionpara={"Fill": "Blank"},
-    )
-    history = parse_history(payload)
+    source = "iFind HTTP history_quotes"
+    raw_data: dict[str, Any] = {}
+    try:
+        xingyao_payload = monitor.fetch_xingyao_kline_rows(
+            [plain_code(code) for code in codes],
+            days=args.days,
+            period="day",
+        )
+        if not xingyao_payload.get("row_count"):
+            raise RuntimeError(xingyao_payload.get("error") or "empty Xingyao history")
+        history = parse_xingyao_history(xingyao_payload)
+        source = "Xingyao AmazingData daily kline"
+        raw_data = {
+            "xingyao_rows": xingyao_payload.get("row_count"),
+            "xingyao_period": xingyao_payload.get("period"),
+        }
+    except (OSError, TimeoutError, RuntimeError) as xingyao_exc:
+        client = IFindHTTPClient()
+        payload = client.history_quotes(
+            codes,
+            indicators="open,high,low,close,volume,amount,changeRatio",
+            start_date=start,
+            end_date=end,
+            functionpara={"Fill": "Blank"},
+        )
+        history = parse_history(payload)
+        raw_data = {
+            "raw_data_vol": payload.get("dataVol"),
+            "xingyao_error": str(xingyao_exc),
+        }
     summaries = []
     for code, rows in history.items():
         plain = plain_code(code)
@@ -453,7 +510,8 @@ def main() -> None:
         "codes": codes,
         "names": names,
         "summaries": summaries,
-        "raw_data_vol": payload.get("dataVol"),
+        "source": source,
+        **raw_data,
     }
 
     date_label = datetime.now().strftime("%Y-%m-%d")

@@ -14,8 +14,10 @@ for stream in (sys.stdout, sys.stderr):
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JSON_BEGIN = "___XINGYAO_PROBE_JSON_BEGIN___"
 JSON_END = "___XINGYAO_PROBE_JSON_END___"
-WORKER_JSON = PROJECT_ROOT / "data" / "latest_xingyao_worker_result.json"
-WORKER_PROGRESS = PROJECT_ROOT / "data" / "latest_xingyao_worker_progress.log"
+DEFAULT_WORKER_JSON = PROJECT_ROOT / "data" / "latest_xingyao_worker_result.json"
+DEFAULT_WORKER_PROGRESS = PROJECT_ROOT / "data" / "latest_xingyao_worker_progress.log"
+WORKER_JSON = Path(os.getenv("XINGYAO_WORKER_JSON", str(DEFAULT_WORKER_JSON)))
+WORKER_PROGRESS = Path(os.getenv("XINGYAO_WORKER_PROGRESS", str(DEFAULT_WORKER_PROGRESS)))
 
 
 def _progress(message: str) -> None:
@@ -152,8 +154,14 @@ def _status_label(rows: int, error: str = "") -> str:
 
 
 def main() -> int:
+    global WORKER_JSON, WORKER_PROGRESS
+
     timeout_seconds = int(os.getenv("XINGYAO_PROBE_TIMEOUT_SECONDS", "45"))
     run_id = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    out_dir = PROJECT_ROOT / "data"
+    out_dir.mkdir(exist_ok=True)
+    WORKER_JSON = out_dir / f"xingyao_worker_result_{run_id}.json"
+    WORKER_PROGRESS = out_dir / f"xingyao_worker_progress_{run_id}.log"
     print(f"Starting Xingyao data probe, timeout={timeout_seconds}s ...", flush=True)
 
     stdout = ""
@@ -162,9 +170,18 @@ def main() -> int:
     try:
         for stale_path in (WORKER_JSON, WORKER_PROGRESS):
             if stale_path.exists():
-                stale_path.unlink()
+                try:
+                    stale_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    # A previous worker/file watcher may still hold the file.
+                    # Keep running; the run_id check below prevents stale reads.
+                    pass
         child_env = os.environ.copy()
         child_env["XINGYAO_PROBE_RUN_ID"] = run_id
+        child_env["XINGYAO_WORKER_JSON"] = str(WORKER_JSON)
+        child_env["XINGYAO_WORKER_PROGRESS"] = str(WORKER_PROGRESS)
         completed = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), "--worker"],
             cwd=str(PROJECT_ROOT),
@@ -205,8 +222,6 @@ def main() -> int:
         probe_error = str(exc)
         result = _fallback_result(traceback.format_exc())
 
-    out_dir = PROJECT_ROOT / "data"
-    out_dir.mkdir(exist_ok=True)
     out_path = out_dir / "latest_xingyao_data_probe.json"
     out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 

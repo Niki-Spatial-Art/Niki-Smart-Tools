@@ -1,76 +1,23 @@
-# Learning Intake
+# Learning Intake - Latest
 
-The radar should improve by studying useful projects and communities, but it should not blindly copy code or outsource decisions.
+生成时间：2026-06-08
 
-## Goal
+## 最新吸收
 
-Create a repeatable learning loop:
+- 星耀/AmazingData 已验证可作为免费行情主入口：快照、日线 K 线、期权基础合约均能返回。
+- clean radar 已改为 `星耀 -> iFind -> 缓存`，iFind 超额时不再阻断持仓动作卡。
+- Feishu 老师消息中明确代码 `300037`，三源核验为 `新宙邦`；处理为观察，不追。
+- 今日所有外部资讯只进入观察池和验证任务，不直接生成买入指令。
 
-```text
-external project/community
-  -> source watchlist
-  -> relevance scoring
-  -> human review
-  -> small experiment
-  -> project rule or connector
-  -> paper-trade validation
-```
+## 明日交易纪律
 
-## What The System May Absorb
+- 新开仓默认关闭。
+- ETF 先处理旧仓，不因现金多而找买点。
+- 强势观察只等回踩承接；涨停、急拉、离 MA20 过远都不追。
+- 买入建议若出现，必须写明风控状态、数量、触发价、止损价和下一次检查条件。
 
-- connector patterns
-- backtest metrics
-- paper-trading workflows
-- risk dashboards
-- option-chain analytics
-- README and documentation patterns
-- evaluation methods for strategy quality
+## 待继续
 
-## What The System Must Not Absorb Blindly
-
-- return claims
-- trading signals without reproducible data
-- private broker protocols
-- copied proprietary strategy code
-- advice that bypasses risk gates
-- social-media hype without testable evidence
-
-## Command
-
-Run a learning intake report:
-
-```powershell
-python tools/learning_intake.py --sources examples/learning_sources.json --output reports/learning_intake.md
-```
-
-The output is a review document. It is not an instruction to trade.
-
-## Daily Learning Documents
-
-Daily research and tool-learning notes should be saved as:
-
-```text
-docs/daily_learning_intake_YYYY-MM-DD.md
-```
-
-The daily note must separate:
-
-- what is useful
-- where it is useful in the system
-- what rule or workflow can be borrowed
-- what must not become a trading signal
-- which files or modules should be improved next
-
-Current daily notes:
-
-- `docs/daily_learning_intake_2026-06-08.md`
-
-## Review Questions
-
-For each candidate source, ask:
-
-- Does it improve data quality, risk control, backtesting, reporting, or execution discipline?
-- Can the idea be tested offline first?
-- Does it require credentials, paid data, or broker permission?
-- Is it compatible with the no-auto-trading boundary?
-- What is the smallest experiment we can run this week?
+1. 将 `ifind_position_backtest.py` 也迁移到星耀日线优先。
+2. 给老师消息做结构化来源入口：代码、题材、验证项、禁买条件。
+3. 明早 09:00 检查星耀时间戳是否刷新到 2026-06-09。

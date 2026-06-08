@@ -9,6 +9,13 @@ $env:PYTHONIOENCODING = "utf-8"
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $projectRoot
 
+if (-not $env:XINGYAO_QUOTE_PRIORITY) {
+    $env:XINGYAO_QUOTE_PRIORITY = "true"
+}
+if (-not $env:XINGYAO_KLINE_PROBE_ENABLED) {
+    $env:XINGYAO_KLINE_PROBE_ENABLED = "true"
+}
+
 $logDir = Join-Path $projectRoot "logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -74,7 +81,8 @@ try {
         }
     }
 
-    Invoke-OptionalPython -StepName "ifind-clean-radar" -Arguments @("tools/ifind_clean_radar.py")
+    Invoke-OptionalPython -StepName "xingyao-data-probe" -Arguments @("tools/xingyao_data_probe.py")
+    Invoke-OptionalPython -StepName "clean-radar-xingyao-ifind-fallback" -Arguments @("tools/ifind_clean_radar.py")
     Invoke-OptionalPython -StepName "ifind-position-backtest" -Arguments @("tools/ifind_position_backtest.py")
     Invoke-OptionalPython -StepName "learning-intake" -Arguments @("tools/learning_intake.py", "--sources", "examples/learning_sources.json", "--output", "reports/learning_intake.md")
 

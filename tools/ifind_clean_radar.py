@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""iFind-only clean radar for holdings and focused watchlist.
+"""Clean radar for holdings and focused watchlist.
 
-This script intentionally avoids Eastmoney and email. It is a clean local
-review entry when proxy noise or legacy report encoding makes monitor.py hard
-to read.
+This script intentionally avoids email and orders. It prefers free Xingyao
+market data when available, falls back to iFind, then to latest local cache.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from connectors.ifind_http import IFindHTTPClient, IFindHTTPError
+import monitor
 
 SUFFIX_SH = {"5", "6", "9"}
 
@@ -140,6 +140,145 @@ def parse_history(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
+def xingyao_plain_code(code: str) -> str:
+    return str(code).split(".", 1)[0]
+
+
+def parse_xingyao_snapshot(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for row in payload.get("rows") or []:
+        code = xingyao_plain_code(str(row.get("code") or ""))
+        latest = as_float(row.get("last"), math.nan)
+        pre_close = as_float(row.get("pre_close"), math.nan)
+        change = (latest / pre_close - 1) * 100 if pre_close and not math.isnan(latest) else math.nan
+        if code:
+            out[code] = {
+                "latest": latest,
+                "changeRatio": change,
+                "amount": as_float(row.get("amount"), math.nan),
+            }
+    return out
+
+
+def parse_xingyao_history(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in payload.get("rows") or []:
+        code = xingyao_plain_code(str(row.get("code") or ""))
+        if not code:
+            continue
+        grouped.setdefault(code, []).append(row)
+    for code, rows in grouped.items():
+        normalized: list[dict[str, Any]] = []
+        prev_close = math.nan
+        rows = sorted(rows, key=lambda r: str(r.get("kline_time") or r.get("date") or ""))
+        for row in rows:
+            close = as_float(row.get("close"), math.nan)
+            change = (close / prev_close - 1) * 100 if prev_close and not math.isnan(close) else math.nan
+            row_date = row.get("kline_time") or row.get("date")
+            normalized.append(
+                {
+                    "date": str(row_date) if row_date is not None else "",
+                    "code": code,
+                    "open": as_float(row.get("open"), math.nan),
+                    "high": as_float(row.get("high"), math.nan),
+                    "low": as_float(row.get("low"), math.nan),
+                    "close": close,
+                    "volume": as_float(row.get("volume"), math.nan),
+                    "amount": as_float(row.get("amount"), math.nan),
+                    "changeRatio": change,
+                }
+            )
+            if not math.isnan(close):
+                prev_close = close
+        out[code] = normalized
+    return out
+
+
+def build_items(
+    codes: list[str],
+    positions: dict[str, Any],
+    portfolio: dict[str, Any],
+    realtime: dict[str, Any],
+    history: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    total_capital = as_float(portfolio.get("total_capital"), 0)
+    items = []
+    for code in codes:
+        pos = positions.get(code)
+        name = str((pos or {}).get("name") or NAME_HINTS.get(code) or code)
+        items.append(
+            summarize_code(
+                code=code,
+                name=name,
+                realtime=realtime.get(code, {}),
+                history=history.get(code, []),
+                position=pos,
+                total_capital=total_capital,
+            )
+        )
+    return items
+
+
+def build_xingyao_payload(portfolio: dict[str, Any], codes: list[str], days: int) -> dict[str, Any]:
+    snapshot_payload = monitor.fetch_xingyao_snapshot_rows(codes)
+    if not snapshot_payload.get("row_count"):
+        raise RuntimeError(f"Xingyao snapshot unavailable: {snapshot_payload.get('error') or 'empty'}")
+    history_payload = monitor.fetch_xingyao_kline_rows(codes, days=days, period="day")
+    if not history_payload.get("row_count"):
+        raise RuntimeError(f"Xingyao daily kline unavailable: {history_payload.get('error') or 'empty'}")
+
+    realtime = parse_xingyao_snapshot(snapshot_payload)
+    history = parse_xingyao_history(history_payload)
+    positions = {str(x.get("code")): x for x in portfolio.get("positions", [])}
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "source": "Xingyao AmazingData snapshot + daily kline",
+        "warning": "-",
+        "portfolio": portfolio,
+        "items": build_items(codes, positions, portfolio, realtime, history),
+        "raw": {
+            "snapshot_rows": snapshot_payload.get("row_count"),
+            "history_rows": history_payload.get("row_count"),
+            "history_period": history_payload.get("period"),
+            "data_router": "xingyao -> ifind -> cache",
+        },
+    }
+
+
+def build_ifind_payload(
+    portfolio: dict[str, Any],
+    codes: list[str],
+    ifind_codes: list[str],
+    start: str,
+    end: str,
+) -> dict[str, Any]:
+    client = IFindHTTPClient()
+    realtime_payload = client.realtime_quotes(ifind_codes)
+    history_payload = client.history_quotes(
+        ifind_codes,
+        indicators="open,high,low,close,volume,amount,changeRatio",
+        start_date=start,
+        end_date=end,
+        functionpara={"Fill": "Blank"},
+    )
+    realtime = parse_table_payload(realtime_payload)
+    history = parse_history(history_payload)
+    positions = {str(x.get("code")): x for x in portfolio.get("positions", [])}
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "source": "iFind HTTP realtime_quotes + history_quotes",
+        "warning": "-",
+        "portfolio": portfolio,
+        "items": build_items(codes, positions, portfolio, realtime, history),
+        "raw": {
+            "realtime_dataVol": realtime_payload.get("dataVol"),
+            "history_dataVol": history_payload.get("dataVol"),
+            "data_router": "xingyao -> ifind -> cache",
+        },
+    }
+
+
 def ret(rows: list[dict[str, Any]], days: int) -> float:
     if len(rows) <= days:
         return math.nan
@@ -244,10 +383,10 @@ def build_markdown(payload: dict[str, Any]) -> str:
     holdings = [x for x in payload["items"] if x["shares"] > 0]
     watch = [x for x in payload["items"] if x["shares"] <= 0]
     lines = [
-        "# iFind Clean Radar",
+        "# Clean Radar",
         "",
         f"生成时间：{payload['generated_at']}",
-        "数据源：iFind HTTP realtime_quotes + history_quotes。未调用东方财富，未发送邮件，未自动下单。",
+        f"数据源：{payload.get('source') or '-'}。未发送邮件，未自动下单。",
         "",
         "## 资金口径",
         "",
@@ -411,45 +550,15 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        client = IFindHTTPClient()
-        realtime_payload = client.realtime_quotes(ifind_codes)
-        history_payload = client.history_quotes(
-            ifind_codes,
-            indicators="open,high,low,close,volume,amount,changeRatio",
-            start_date=start,
-            end_date=end,
-            functionpara={"Fill": "Blank"},
-        )
-        realtime = parse_table_payload(realtime_payload)
-        history = parse_history(history_payload)
-        total_capital = as_float(portfolio.get("total_capital"), 0)
-        items = []
-        for code in codes:
-            pos = positions.get(code)
-            name = str((pos or {}).get("name") or NAME_HINTS.get(code) or code)
-            items.append(
-                summarize_code(
-                    code=code,
-                    name=name,
-                    realtime=realtime.get(code, {}),
-                    history=history.get(code, []),
-                    position=pos,
-                    total_capital=total_capital,
-                )
-            )
-        payload = {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "source": "iFind HTTP only",
-            "warning": "-",
-            "portfolio": portfolio,
-            "items": items,
-            "raw": {
-                "realtime_dataVol": realtime_payload.get("dataVol"),
-                "history_dataVol": history_payload.get("dataVol"),
-            },
-        }
-    except (IFindHTTPError, OSError, TimeoutError, RuntimeError) as exc:
-        payload = build_degraded_payload(portfolio, codes, out_dir, exc)
+        payload = build_xingyao_payload(portfolio, codes, args.days)
+    except (OSError, TimeoutError, RuntimeError) as xingyao_exc:
+        try:
+            payload = build_ifind_payload(portfolio, codes, ifind_codes, start, end)
+            payload["warning"] = f"Xingyao unavailable; used iFind fallback. Xingyao error: {xingyao_exc}"
+            payload.setdefault("raw", {})["xingyao_error"] = str(xingyao_exc)
+        except (IFindHTTPError, OSError, TimeoutError, RuntimeError) as exc:
+            payload = build_degraded_payload(portfolio, codes, out_dir, exc)
+            payload.setdefault("raw", {})["xingyao_error"] = str(xingyao_exc)
 
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     json_path = out_dir / f"{stamp}_ifind_clean_radar.json"

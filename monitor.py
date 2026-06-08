@@ -365,7 +365,7 @@ def quote_from_xingyao_row(code: str, row: Dict) -> Quote:
         "last",
         "price",
     )
-    pre_close = first_float(row, "pre_close_price", "PRE_CLOSE_PRICE", "prev_close", "preclose")
+    pre_close = first_float(row, "pre_close_price", "PRE_CLOSE_PRICE", "pre_close", "prev_close", "preclose")
     pct_change = first_float(row, "pct_change", "PCT_CHANGE", "change_rate")
     if pct_change is None and price is not None and pre_close:
         pct_change = (price - pre_close) / pre_close * 100
@@ -644,6 +644,47 @@ def dataframe_to_rows(value, max_rows: Optional[int] = None) -> List[Dict]:
     return rows
 
 
+def xingyao_calendar(base) -> List[int]:
+    calendar = []
+    with contextlib.suppress(Exception):
+        calendar = base.get_calendar()
+    if not calendar:
+        calendar = getattr(base, "calendar", []) or []
+    return [int(item) for item in calendar if item]
+
+
+def xingyao_market_result_to_rows(value, max_rows: Optional[int] = None, latest_only: bool = False) -> List[Dict]:
+    if value is None:
+        return []
+    rows: List[Dict] = []
+
+    if isinstance(value, dict):
+        for outer_key, outer_value in value.items():
+            if isinstance(outer_value, dict):
+                for code, frame in outer_value.items():
+                    frame_rows = dataframe_to_rows(frame)
+                    if latest_only and frame_rows:
+                        frame_rows = [frame_rows[-1]]
+                    for row in frame_rows:
+                        if isinstance(row, dict):
+                            row.setdefault("date", outer_key)
+                            row.setdefault("code", code)
+                            rows.append(row)
+            else:
+                frame_rows = dataframe_to_rows(outer_value)
+                if latest_only and frame_rows:
+                    frame_rows = [frame_rows[-1]]
+                for row in frame_rows:
+                    if isinstance(row, dict):
+                        row.setdefault("code", outer_key)
+                        rows.append(row)
+            if max_rows is not None and len(rows) >= max_rows:
+                return rows[:max_rows]
+        return rows[:max_rows] if max_rows is not None else rows
+
+    return dataframe_to_rows(value, max_rows)
+
+
 def xingyao_market_code(code: str) -> str:
     return f"{code}.SH" if market_prefix(code) == "1" else f"{code}.SZ"
 
@@ -659,15 +700,17 @@ def fetch_xingyao_snapshot_rows(codes: List[str]) -> Dict:
 
     try:
         base = ad.BaseData()
-        market = ad.MarketData(base.calendar)
+        calendar = xingyao_calendar(base)
+        market = ad.MarketData(calendar)
         today = int(datetime.now(BEIJING_TZ).strftime("%Y%m%d"))
         sdk_codes = [xingyao_market_code(code) for code in codes]
         rows = market.query_snapshot(sdk_codes, today, today)
-        records = dataframe_to_rows(rows)
+        records = xingyao_market_result_to_rows(rows, latest_only=True)
         return {
             "enabled": bool(records),
             "source": "xingyao_snapshot",
             "requested": sdk_codes,
+            "calendar_len": len(calendar),
             "row_count": len(records),
             "rows": records,
             "error": "" if records else "empty snapshot",
@@ -680,6 +723,19 @@ def fetch_xingyao_snapshot_rows(codes: List[str]) -> Dict:
 
 
 def fetch_xingyao_kline_probe(codes: List[str]) -> Dict:
+    return fetch_xingyao_kline_rows(codes[:3], days=1, max_rows=10, period="min1")
+
+
+def fetch_xingyao_kline_rows(
+    codes: List[str],
+    days: int = 180,
+    max_rows: Optional[int] = None,
+    period: str = "day",
+) -> Dict:
+    """Read AmazingData K-line rows for ETF/A-share codes.
+
+    period uses AmazingData constant names such as day/min1/min5.
+    """
     try:
         ad = xingyao_login()
     except Exception as exc:
@@ -687,18 +743,28 @@ def fetch_xingyao_kline_probe(codes: List[str]) -> Dict:
 
     try:
         base = ad.BaseData()
-        market = ad.MarketData(base.calendar)
+        calendar = xingyao_calendar(base)
+        market = ad.MarketData(calendar)
         today = int(datetime.now(BEIJING_TZ).strftime("%Y%m%d"))
-        sdk_codes = [xingyao_market_code(code) for code in codes[:3]]
+        begin = int((datetime.now(BEIJING_TZ) - timedelta(days=days)).strftime("%Y%m%d"))
+        sdk_codes = [xingyao_market_code(code) for code in codes]
         query = getattr(market, "query_kline", None)
         if query is None:
             return {"enabled": False, "source": "xingyao_kline", "rows": [], "error": "AmazingData MarketData has no query_kline"}
-        rows = query(sdk_codes, today, today)
-        records = dataframe_to_rows(rows, 10)
+        period_obj = getattr(getattr(ad, "constant", None), "Period", None)
+        period_value = getattr(getattr(period_obj, period, None), "value", None)
+        if period_value is None:
+            raise RuntimeError(f"unsupported AmazingData period: {period}")
+        rows = query(sdk_codes, begin, today, period=period_value)
+        records = xingyao_market_result_to_rows(rows, max_rows)
         return {
             "enabled": bool(records),
             "source": "xingyao_kline",
             "requested": sdk_codes,
+            "begin_date": begin,
+            "end_date": today,
+            "period": period,
+            "calendar_len": len(calendar),
             "row_count": len(records),
             "rows": records,
             "error": "" if records else "empty kline",
