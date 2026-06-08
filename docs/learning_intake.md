@@ -45,6 +45,26 @@ python tools/learning_intake.py --sources examples/learning_sources.json --outpu
 
 The output is a review document. It is not an instruction to trade.
 
+## Daily Learning Documents
+
+Daily research and tool-learning notes should be saved as:
+
+```text
+docs/daily_learning_intake_YYYY-MM-DD.md
+```
+
+The daily note must separate:
+
+- what is useful
+- where it is useful in the system
+- what rule or workflow can be borrowed
+- what must not become a trading signal
+- which files or modules should be improved next
+
+Current daily notes:
+
+- `docs/daily_learning_intake_2026-06-08.md`
+
 ## Review Questions
 
 For each candidate source, ask:
