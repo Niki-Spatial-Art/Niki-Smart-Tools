@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from connectors.ifind_http import IFindHTTPClient
+from connectors.ifind_http import IFindHTTPClient, IFindHTTPError
 
 SUFFIX_SH = {"5", "6", "9"}
 
@@ -303,6 +303,87 @@ def build_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def latest_cached_payload(out_dir: Path) -> dict[str, Any] | None:
+    paths = sorted(out_dir.glob("*_ifind_clean_radar.json"), key=lambda p: p.stat().st_mtime)
+    for path in reversed(paths):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def build_degraded_payload(
+    portfolio: dict[str, Any],
+    codes: list[str],
+    out_dir: Path,
+    error: Exception,
+) -> dict[str, Any]:
+    cached = latest_cached_payload(out_dir) or {}
+    cached_items = {
+        str(item.get("code") or ""): dict(item)
+        for item in cached.get("items", [])
+        if item.get("code")
+    }
+    positions = {str(x.get("code")): x for x in portfolio.get("positions", [])}
+    total_capital = as_float(portfolio.get("total_capital"), 0)
+    items: list[dict[str, Any]] = []
+    for code in codes:
+        pos = positions.get(code)
+        base = cached_items.get(code, {})
+        name = str((pos or {}).get("name") or base.get("name") or NAME_HINTS.get(code) or code)
+        close = as_float(base.get("close"), math.nan)
+        shares = as_float((pos or {}).get("shares"), 0)
+        cost = as_float((pos or {}).get("cost"))
+        value = close * shares if shares and not math.isnan(close) else 0.0
+        pnl = (close - cost) * shares if shares and not math.isnan(cost) and not math.isnan(close) else math.nan
+        weight = value / total_capital * 100 if total_capital else math.nan
+        stop_loss = as_float((pos or {}).get("stop_loss"))
+        sell_above = as_float((pos or {}).get("sell_above"))
+        buy_below = as_float((pos or {}).get("buy_below"), math.nan)
+
+        item = dict(base)
+        item.update(
+            {
+                "code": code,
+                "name": name,
+                "shares": shares,
+                "cost": cost,
+                "value": value,
+                "weight": weight,
+                "pnl": pnl,
+                "buy_below": buy_below,
+                "sell_above": sell_above,
+                "stop_loss": stop_loss,
+                "note": str((pos or {}).get("note") or base.get("note") or ""),
+            }
+        )
+        if shares > 0:
+            if not math.isnan(close) and not math.isnan(stop_loss) and close <= stop_loss:
+                item["decision"] = "STALE-CACHE: check stop / reduce risk"
+                item["reason"] = f"cached price {price(close)} <= stop {price(stop_loss)}; verify live quote before action"
+            else:
+                item["decision"] = "STALE-CACHE: hold / verify"
+                item["reason"] = "iFind unavailable; manage existing position only, no add"
+        else:
+            item["decision"] = "STALE-CACHE: watch only"
+            item["reason"] = "iFind unavailable; buy candidates are disabled"
+        items.append(item)
+
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "source": f"DEGRADED: latest cached clean radar + current portfolio.local.json ({error})",
+        "warning": "Fresh iFind data unavailable. All buy candidates are disabled until live data is restored.",
+        "portfolio": portfolio,
+        "items": items,
+        "raw": {
+            "fallback": True,
+            "fallback_error": str(error),
+            "cached_generated_at": cached.get("generated_at", ""),
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate an iFind-only clean radar report")
     parser.add_argument("--days", type=int, default=180)
@@ -322,48 +403,54 @@ def main() -> None:
         if code and code not in codes:
             codes.append(code)
 
-    client = IFindHTTPClient()
     ifind_codes = [ifind_code(code) for code in codes]
-    realtime_payload = client.realtime_quotes(ifind_codes)
     end = datetime.now().strftime("%Y-%m-%d")
     start = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")
-    history_payload = client.history_quotes(
-        ifind_codes,
-        indicators="open,high,low,close,volume,amount,changeRatio",
-        start_date=start,
-        end_date=end,
-        functionpara={"Fill": "Blank"},
-    )
-    realtime = parse_table_payload(realtime_payload)
-    history = parse_history(history_payload)
-    total_capital = as_float(portfolio.get("total_capital"), 0)
-    items = []
-    for code in codes:
-        pos = positions.get(code)
-        name = str((pos or {}).get("name") or NAME_HINTS.get(code) or code)
-        items.append(
-            summarize_code(
-                code=code,
-                name=name,
-                realtime=realtime.get(code, {}),
-                history=history.get(code, []),
-                position=pos,
-                total_capital=total_capital,
-            )
-        )
 
-    payload = {
-        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "source": "iFind HTTP only",
-        "portfolio": portfolio,
-        "items": items,
-        "raw": {
-            "realtime_dataVol": realtime_payload.get("dataVol"),
-            "history_dataVol": history_payload.get("dataVol"),
-        },
-    }
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        client = IFindHTTPClient()
+        realtime_payload = client.realtime_quotes(ifind_codes)
+        history_payload = client.history_quotes(
+            ifind_codes,
+            indicators="open,high,low,close,volume,amount,changeRatio",
+            start_date=start,
+            end_date=end,
+            functionpara={"Fill": "Blank"},
+        )
+        realtime = parse_table_payload(realtime_payload)
+        history = parse_history(history_payload)
+        total_capital = as_float(portfolio.get("total_capital"), 0)
+        items = []
+        for code in codes:
+            pos = positions.get(code)
+            name = str((pos or {}).get("name") or NAME_HINTS.get(code) or code)
+            items.append(
+                summarize_code(
+                    code=code,
+                    name=name,
+                    realtime=realtime.get(code, {}),
+                    history=history.get(code, []),
+                    position=pos,
+                    total_capital=total_capital,
+                )
+            )
+        payload = {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "iFind HTTP only",
+            "warning": "-",
+            "portfolio": portfolio,
+            "items": items,
+            "raw": {
+                "realtime_dataVol": realtime_payload.get("dataVol"),
+                "history_dataVol": history_payload.get("dataVol"),
+            },
+        }
+    except (IFindHTTPError, OSError, TimeoutError, RuntimeError) as exc:
+        payload = build_degraded_payload(portfolio, codes, out_dir, exc)
+
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     json_path = out_dir / f"{stamp}_ifind_clean_radar.json"
     md_path = out_dir / f"{stamp}_ifind_clean_radar.md"

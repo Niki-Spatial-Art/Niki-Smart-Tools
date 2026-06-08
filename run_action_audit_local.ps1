@@ -28,6 +28,33 @@ try {
     $python = (Get-Command python -ErrorAction Stop).Source
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Python: $python" | Out-File -FilePath $logFile -Encoding utf8 -Append
 
+    function Invoke-OptionalPython {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string[]]$Arguments,
+            [Parameter(Mandatory = $true)]
+            [string]$StepName
+        )
+
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Optional step started: $StepName" | Out-File -FilePath $logFile -Encoding utf8 -Append
+            & $python @Arguments 2>&1 | ForEach-Object {
+                $_.ToString() | Out-File -FilePath $logFile -Encoding utf8 -Append
+            }
+            if ($LASTEXITCODE -ne 0) {
+                "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Optional step failed: $StepName exit=$LASTEXITCODE" | Out-File -FilePath $logFile -Encoding utf8 -Append
+            }
+            else {
+                "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Optional step finished: $StepName" | Out-File -FilePath $logFile -Encoding utf8 -Append
+            }
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+    }
+
     function Invoke-AuditPython {
         param(
             [Parameter(Mandatory = $true)]
@@ -46,6 +73,10 @@ try {
             $ErrorActionPreference = $previousErrorActionPreference
         }
     }
+
+    Invoke-OptionalPython -StepName "ifind-clean-radar" -Arguments @("tools/ifind_clean_radar.py")
+    Invoke-OptionalPython -StepName "ifind-position-backtest" -Arguments @("tools/ifind_position_backtest.py")
+    Invoke-OptionalPython -StepName "learning-intake" -Arguments @("tools/learning_intake.py", "--sources", "examples/learning_sources.json", "--output", "reports/learning_intake.md")
 
     $exitCode = Invoke-AuditPython -Arguments @("tools/action_audit.py", "export-plan", "--report", $report, "--journal", $journal)
     if ($exitCode -ne 0) {
