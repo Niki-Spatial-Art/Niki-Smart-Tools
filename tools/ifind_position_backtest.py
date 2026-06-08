@@ -345,6 +345,11 @@ def build_markdown(payload: dict[str, Any]) -> str:
     holdings = [r for r in rows if r["position_shares"] > 0]
     strong_watch = [r for r in rows if r["position_shares"] <= 0 and r.get("is_strong_watch")]
     buyable = [r for r in strong_watch if r.get("tomorrow_action") == "等回踩买"]
+    buyable_summary = (
+        " / ".join(f"{r['code']} {payload['names'].get(r['code'], r['code'])}" for r in buyable[:6])
+        if buyable
+        else "无可直接买入新票，默认等 / 不买。"
+    )
     lines = [
         "# iFind 强势观察与持仓回测",
         "",
@@ -355,7 +360,7 @@ def build_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- 持仓优先，先处理已有仓位 {len(holdings)} 只，不因为旧动作卡直接开新仓。",
         f"- 强势观察覆盖 {len(strong_watch)} 只；其中可进入“等回踩买”名单 {len(buyable)} 只。",
-        f"- 明天默认结论：{' / '.join(f'{r['code']} {payload['names'].get(r['code'], r['code'])}' for r in buyable[:6]) if buyable else '无可直接买入新票，默认等 / 不买。'}",
+        f"- 明天默认结论：{buyable_summary}",
         "",
         "## 持仓处理",
         "",
