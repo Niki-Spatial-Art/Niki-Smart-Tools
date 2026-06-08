@@ -29,3 +29,10 @@
 - clean radar 已验证星耀可扫 23 个代码：快照 23 条、日线 920 行；新 5 只均进入观察池。
 - 明早规则：这些全部是观察，不是买入。涨停、急拉、离 MA20 过远、高开冲高，一律禁追；买入数量默认 `0`。
 - 已把 clean radar 默认回看窗口改为 30 天，降低星耀批量日线耗时，避免 09:00 卡住。
+
+## Skill 方法论
+
+- Anthropic/Perplexity Skill 方法论评级 P1：Skill 不是长提示词，而是 `SKILL.md + references + scripts + examples + assets` 的能力包。
+- Niki-Smart-Tools 后续 Skill 设计：`SKILL.md` 做路由和纪律，`references` 放风险规则/数据源/Gotchas，`scripts` 固化 clean radar、回测、老师消息解析和日报生成。
+- 中金分析师 Skill 归类为“券商认证投研 Skill”：借鉴分析师问答、市场策略、行业研究、产品配置、合规边界，但不绕过认证，不把观点直接转成买入。
+- 新增文档：`docs/skill_methodology_2026-06-08.md`。
