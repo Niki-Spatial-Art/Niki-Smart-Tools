@@ -70,5 +70,7 @@ Main file:
 - A green signal is permission to study, not permission to buy.
 - A red signal blocks action.
 - A zero-capital or zero-share card is observation only.
+- For A-share short-term trades, planned trade amount below 10,000 CNY is blocked by default.
+- For A-share short-term trades, planned trade amount between 10,000 and 20,000 CNY is discouraged unless the card is A-grade and exit liquidity is clear.
 - T+1 constraints must be visible on every A-share action card.
 - Actual execution is outside the system and must be reviewed by the user.
