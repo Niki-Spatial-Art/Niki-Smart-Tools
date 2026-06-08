@@ -1798,7 +1798,7 @@ def run_stock_radar() -> Dict:
 
     watchlist = load_digital_infra_watchlist()
     layers = digital_infra_layers(watchlist)
-    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "130"))
+    max_codes = int(os.getenv("AI_STOCK_MAX_CODES", "240"))
     results = []
     failures = []
     seen_codes = set()

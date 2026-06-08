@@ -45,6 +45,11 @@ NAME_HINTS = {
     "688676": "金盘科技",
     "002595": "豪迈科技",
     "603530": "神马电力",
+    "300593": "新雷能",
+    "300285": "国瓷材料",
+    "603256": "宏和科技",
+    "301313": "凡拓数创",
+    "688787": "海天瑞声",
 }
 
 
@@ -525,7 +530,7 @@ def build_degraded_payload(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate an iFind-only clean radar report")
-    parser.add_argument("--days", type=int, default=180)
+    parser.add_argument("--days", type=int, default=int(os.getenv("CLEAN_RADAR_DAYS", "30")))
     parser.add_argument("--output-dir", default=str(ROOT / "reports" / "ifind_clean"))
     args = parser.parse_args()
 
