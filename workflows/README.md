@@ -4,15 +4,21 @@
 
 ```text
 1. Load configuration
-2. Fetch and normalize quotes
-3. Run ETF/A-share/option radar
-4. Apply risk gates and portfolio constraints
-5. Generate action cards
-6. Archive Markdown/JSON reports
-7. Send email or render local dashboard
-8. Export action cards to the paper journal
-9. Human reviews actual execution and outcome
+2. Scan morning sentiment: overseas X, domestic communities, and news flashes
+3. Fetch and normalize quotes
+4. Run ETF/A-share/option radar
+5. Apply risk gates and portfolio constraints
+6. Validate sentiment against iFind amount, volume, MA20 distance, and backtests
+7. Generate action cards
+8. Archive Markdown/JSON reports
+9. Send email or render local dashboard
+10. Export action cards to the paper journal
+11. Human reviews actual execution and outcome
 ```
+
+Sentiment sources are mapping inputs only. They can downgrade risk or add a
+watch item, but they cannot directly become a buy instruction. See
+`docs/morning_sentiment_scan_playbook_2026-06-08.md`.
 
 ## Research Director SOP
 
