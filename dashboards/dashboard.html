@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>星耀工作台 v2</title>
+<style>
+:root{--bg:#0f1117;--panel:#1a1d2e;--border:#2a2d3e;--text:#d1d5db;--muted:#6b7280;--green:#22c55e;--red:#ef4444;--orange:#f59e0b;--blue:#3b82f6;--accent:#6366f1;--gold:#eab308}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Microsoft YaHei',sans-serif;font-size:14px;height:100vh;overflow:hidden}
+.topbar{height:48px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:12px}
+.logo{font-size:16px;font-weight:700;color:var(--accent)}
+.brand{font-size:11px;color:var(--muted)}
+.sep{flex:1}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:3px}
+.st{display:flex;align-items:center;gap:4px;padding:3px 10px;border-radius:4px;font-size:12px;background:rgba(255,255,255,0.03);cursor:pointer;transition:background .15s}.st:hover{background:rgba(255,255,255,0.06)}
+.st-ok .dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+.st-warn .dot{background:var(--orange)}
+.st-err .dot{background:var(--red)}
+.clock{font-size:13px;font-weight:600;color:#f8fafc;min-width:55px;text-align:center}
+.sbar{height:24px;background:#0d0f15;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:8px;font-size:9px;color:var(--muted)}
+.pill{padding:1px 6px;border-radius:3px;font-size:8px;font-weight:500}
+.pill-live{background:rgba(34,197,94,0.15);color:var(--green)}
+.grid{display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:1fr 1fr;height:calc(100vh - 42px - 24px);gap:1px;background:var(--border)}
+.pnl{background:var(--panel);padding:6px;display:flex;flex-direction:column;overflow:hidden}
+.pt{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.chart-area{grid-row:1/3;grid-column:2;background:#0d0f15;display:flex;flex-direction:column}
+.ch-h{height:32px;display:flex;align-items:center;padding:0 10px;gap:8px;border-bottom:1px solid var(--border)}
+.ch-h .sym{font-size:15px;font-weight:700;color:#f8fafc}
+.ch-h .nm{font-size:10px;color:var(--muted)}
+.pr_up{font-size:16px;font-weight:700;margin-left:auto;color:var(--red)}
+.chg_up{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;color:#fff;background:var(--red)}
+.ch-container{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ch-container svg{width:100%;height:100%}
+.tbar{height:24px;display:flex;align-items:center;padding:0 6px;gap:3px;border-top:1px solid var(--border);background:rgba(0,0,0,0.3)}
+.tb{padding:1px 7px;font-size:9px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted)}
+.tb.act{background:var(--accent);border-color:var(--accent);color:#fff}
+.sc{overflow-y:auto;flex:1}.sc::-webkit-scrollbar{width:3px}.sc::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.fr{display:flex;align-items:center;gap:5px;padding:2px 5px;border-radius:3px;margin-bottom:1px;font-size:9px;border-left:2px solid transparent}
+.fok{border-left-color:var(--green);background:rgba(34,197,94,0.03)}.fw{border-left-color:var(--orange);background:rgba(245,158,11,0.03)}.foff{border-left-color:var(--muted);opacity:0.35}
+.bd-ok{font-size:8px;padding:1px 4px;border-radius:2px;background:rgba(34,197,94,0.12);color:var(--green)}.bd-w{background:rgba(245,158,11,0.12);color:var(--orange)}.bd-na{background:rgba(107,114,128,0.12);color:var(--muted)}
+.ac{border:1px solid var(--border);border-radius:5px;padding:6px;margin-bottom:4px;font-size:9px;background:rgba(0,0,0,0.15)}
+.ac.buy{border-left:3px solid var(--red)}.ac.sell{border-left:3px solid var(--green)}.ac.wait{border-left:3px solid var(--orange)}
+.ac .ah{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+.at{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:700}
+.at-buy{background:rgba(239,68,68,0.12);color:var(--red)}.at-sell{background:rgba(34,197,94,0.12);color:var(--green)}.at-wait{background:rgba(245,158,11,0.12);color:var(--orange)}
+.ac .symb{font-weight:600;font-size:10px}.ac .af{font-size:8px;color:var(--muted);margin-left:auto}
+.ar{display:flex;justify-content:space-between;padding:1px 0;font-size:9px}.ar .lbl{color:var(--muted)}
+.am{display:flex;gap:5px;padding-top:3px;font-size:8px;border-top:1px solid rgba(255,255,255,0.04);margin-top:3px}
+.c-hi{color:var(--green)}.c-med{color:var(--orange)}
+.or{display:flex;gap:3px;padding:1px 3px;font-size:9px;border-bottom:1px solid rgba(255,255,255,0.02)}.or .strike{font-weight:600;color:var(--gold);min-width:45px}.or .call,.or .put{flex:1;text-align:right;font-family:'Consolas',monospace}
+.br{display:flex;gap:4px;align-items:center;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.02);font-size:9px}.br .met{flex:1}.br .val{font-family:'Consolas',monospace;font-weight:600}.v-up{color:var(--red)}.v-dn{color:var(--green)}
+.li{padding:3px 5px;margin-bottom:2px;background:rgba(99,102,241,0.04);border-radius:3px;font-size:9px;border-left:2px solid var(--accent)}.li .act{color:var(--orange);font-size:8px;margin-top:1px}
+.wl{display:flex;gap:12px;font-size:9px;flex:1;justify-content:flex-end}.wl-up{color:var(--red)}.wl-dn{color:var(--green)}
+</style></head><body>
+<div class="topbar">
+<div class="logo">✦ 星耀工作台 v2</div><div class="brand">AmazingData · Niki-Smart-Tools</div><div class="sep"></div>
+<div class="st st-ok"><span class="dot"></span>星耀</div><div class="st st-warn"><span class="dot"></span>iFind</div><div class="st st-ok"><span class="dot"></span>东财</div><div class="st st-err"><span class="dot"></span>腾讯</div><div class="clock">14:35:12</div></div>
+<div class="sbar"><span>刷新: <span class="pill pill-live">实时 10s</span></span><span>交易: <span class="pill pill-live">连续竞价</span></span>
+<div class="wl"><span><b>000300</b> <span class="wl-up">+1.2%</span></span><span><b>510300</b> <span class="wl-up">4.818</span></span><span><b>588000</b> <span class="wl-dn">-0.3%</span></span><span><b>510050</b> <span class="wl-up">+0.5%</span></span></div></div>
+<div class="grid">
+<div class="pnl"><div class="pt">📡 接口健康</div><div class="sc">
+<div style="font-size:8px;color:var(--muted);margin-bottom:2px">实时层</div>
+<div class="fr fok"><span>●</span><span style="flex:1">快照 query_snapshot</span><span class="bd-ok">3ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">日K线 query_kline</span><span class="bd-ok">45ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">1mK线 query_kline</span><span class="bd-ok">22ms</span></div>
+<div class="fr fw"><span>●</span><span style="flex:1">期权快照</span><span class="bd-w">待验证</span></div>
+<div style="font-size:8px;color:var(--muted);margin:4px 0 2px">历史层</div>
+<div class="fr fok"><span>●</span><span style="flex:1">交易日历</span><span class="bd-ok">8ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">代码表</span><span class="bd-ok">15ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">复权因子</span><span class="bd-ok">12ms</span></div>
+<div style="font-size:8px;color:var(--muted);margin:4px 0 2px">基本面层</div>
+<div class="fr fok"><span>●</span><span style="flex:1">资产负债表</span><span class="bd-ok">120ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">利润表</span><span class="bd-ok">98ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">现金流</span><span class="bd-ok">85ms</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">股东户数</span><span class="bd-na">未接入</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">股权质押</span><span class="bd-na">未接入</span></div>
+<div style="font-size:8px;color:var(--muted);margin:4px 0 2px">ETF专题层</div>
+<div class="fr fok"><span>●</span><span style="flex:1">ETF份额</span><span class="bd-ok">45ms</span></div>
+<div class="fr fok"><span>●</span><span style="flex:1">IOPV</span><span class="bd-ok">30ms</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">PCF申赎</span><span class="bd-na">未接入</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">行业权重</span><span class="bd-na">未接入</span></div>
+<div style="font-size:8px;color:var(--muted);margin:4px 0 2px">资金层</div>
+<div class="fr foff"><span>◌</span><span style="flex:1">两融</span><span class="bd-na">Phase 2</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">龙虎榜</span><span class="bd-na">Phase 2</span></div>
+<div style="font-size:8px;color:var(--muted);margin:4px 0 2px">⚡金融算子3.6(手册新发现)</div>
+<div class="fr foff"><span>◌</span><span style="flex:1">TimeSeriesFunction</span><span class="bd-na">待探针</span></div>
+<div class="fr foff"><span>◌</span><span style="flex:1">CrossSectionFunction</span><span class="bd-na">待探针</span></div>
+</div></div>
+<div class="chart-area">
+<div class="ch-h"><div class="sym">510300</div><div class="nm">华泰柏瑞沪深300ETF</div><div style="flex:1;display:flex;justify-content:center;gap:2px">
+<button class="tb act">1m</button><button class="tb">5m</button><button class="tb">15m</button><button class="tb">日K</button></div>
+<div class="pr_up">4.818</div><div class="chg_up">+1.41%</div></div>
+<div class="ch-container">
+<svg viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
+<rect width="900" height="500" fill="#0d0f15"/>
+<g stroke="#1a1d2e" stroke-width="0.5">
+<line x1="70" y1="40" x2="880" y2="40"/><line x1="70" y1="140" x2="880" y2="140"/><line x1="70" y1="240" x2="880" y2="240"/><line x1="70" y1="340" x2="880" y2="340"/><line x1="70" y1="440" x2="880" y2="440"/>
+</g>
+<g font-size="10" fill="#6b7280" font-family="Consolas,monospace">
+<text x="62" y="44" text-anchor="end">5.00</text><text x="62" y="144" text-anchor="end">4.95</text><text x="62" y="244" text-anchor="end">4.90</text><text x="62" y="344" text-anchor="end">4.85</text><text x="62" y="444" text-anchor="end">4.80</text>
+</g>
+<g>
+<rect x="82" y="275" width="6" height="18" fill="#ef4444"/><line x1="85" y1="270" x2="85" y2="296" stroke="#ef4444"/>
+<rect x="102" y="258" width="6" height="22" fill="#ef4444"/><line x1="105" y1="252" x2="105" y2="284" stroke="#ef4444"/>
+<rect x="122" y="248" width="6" height="14" fill="#ef4444"/><line x1="125" y1="242" x2="125" y2="266" stroke="#ef4444"/>
+<rect x="142" y="240" width="6" height="12" fill="#22c55e"/><line x1="145" y1="235" x2="145" y2="258" stroke="#22c55e"/>
+<rect x="162" y="230" width="6" height="20" fill="#ef4444"/><line x1="165" y1="225" x2="165" y2="254" stroke="#ef4444"/>
+<rect x="182" y="210" width="6" height="25" fill="#ef4444"/><line x1="185" y1="205" x2="185" y2="240" stroke="#ef4444"/>
+<rect x="202" y="218" width="6" height="18" fill="#22c55e"/><line x1="205" y1="212" x2="205" y2="240" stroke="#22c55e"/>
+<rect x="282" y="228" width="6" height="20" fill="#ef4444"/><line x1="285" y1="222" x2="285" y2="252" stroke="#ef4444"/>
+<rect x="342" y="240" width="6" height="12" fill="#22c55e"/><line x1="345" y1="236" x2="345" y2="256" stroke="#22c55e"/>
+<rect x="462" y="260" width="6" height="18" fill="#22c55e"/><line x1="465" y1="254" x2="465" y2="282" stroke="#22c55e"/>
+<rect x="522" y="278" width="6" height="16" fill="#22c55e"/><line x1="525" y1="272" x2="525" y2="298" stroke="#22c55e"/>
+<rect x="582" y="318" width="6" height="22" fill="#22c55e"/><line x1="585" y1="310" x2="585" y2="345" stroke="#22c55e"/>
+<rect x="622" y="340" width="6" height="25" fill="#22c55e"/><line x1="625" y1="330" x2="625" y2="370" stroke="#22c55e"/>
+<rect x="682" y="370" width="6" height="28" fill="#22c55e"/><line x1="685" y1="360" x2="685" y2="403" stroke="#22c55e"/>
+<rect x="702" y="348" width="6" height="22" fill="#ef4444"/><line x1="705" y1="340" x2="705" y2="375" stroke="#ef4444"/>
+<rect x="762" y="385" width="6" height="22" fill="#ef4444"/><line x1="765" y1="378" x2="765" y2="412" stroke="#ef4444"/>
+<rect x="822" y="388" width="6" height="14" fill="#ef4444"/><line x1="825" y1="382" x2="825" y2="406" stroke="#ef4444"/>
+<rect x="872" y="350" width="8" height="28" fill="#22c55e"/><line x1="876" y1="340" x2="876" y2="385" stroke="#22c55e" stroke-width="1.5"/>
+</g>
+<polyline points="80,275 120,258 160,240 200,222 240,240 280,230 340,242 460,262 520,280 580,320 620,345 680,368 740,378 780,382 820,390 876,372" stroke="#f59e0b" stroke-width="1.2" fill="none"/>
+<polyline points="80,275 120,262 160,250 200,240 240,245 280,245 340,252 460,270 520,290 580,325 620,350 680,380 740,385 780,388 820,392 876,378" stroke="#3b82f6" stroke-width="1.2" fill="none"/>
+<text x="860" y="370" font-size="8" fill="#f59e0b">MA5</text><text x="860" y="385" font-size="8" fill="#3b82f6">MA10</text>
+<line x1="660" y1="405" x2="876" y2="405" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="665" y="415" font-size="8" fill="#ef4444">止损 4.705</text>
+<circle cx="680" cy="360" r="5" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+<text x="670" y="438" font-size="7" fill="#8b5cf6">两融余额新高</text>
+</svg></div>
+<div class="tbar">
+<button class="tb act">MA</button><button class="tb">MACD</button><button class="tb">RSI</button><button class="tb">BOLL</button><button class="tb">VWAP</button>
+<span style="flex:1"></span><span style="font-size:8px;color:var(--muted)">十字线: ON</span>
+<button class="tb" style="color:var(--accent)">💬 问星耀</button></div></div>
+<div class="pnl"><div class="pt">⚡ 动作卡</div><div class="sc">
+<div class="ac buy"><div class="ah"><span class="at at-buy">买入观察</span><span class="symb">510300</span><span class="af">3s</span></div>
+<div class="ar"><span class="lbl">现价</span><span class="wl-up">4.818 +1.41%</span></div>
+<div class="ar"><span class="lbl">触发</span>MA5金叉MA10 + RSI反弹</div>
+<div class="ar"><span class="lbl">止损</span>4.705 (ATR×2)</div><div class="ar"><span class="lbl">止盈</span>5.016 (前高)</div>
+<div class="am"><span class="c-hi">high</span><span style="color:var(--muted)">xingyao 14:35:12</span></div></div>
+<div class="ac sell"><div class="ah"><span class="at at-sell">卖出提醒</span><span class="symb">588000</span><span class="af">12s</span></div>
+<div class="ar"><span class="lbl">现价</span><span class="wl-dn">1.085 -0.3%</span></div>
+<div class="ar"><span class="lbl">触发</span>溢价>0.3% + 缩量</div>
+<div class="am"><span class="c-med">medium</span><span style="color:var(--muted)">eastmoney 14:35:03</span></div></div>
+<div class="ac wait"><div class="ah"><span class="at at-wait">等待观望</span><span class="symb">510050</span><span class="af">8s</span></div>
+<div class="ar"><span class="lbl">现价</span>3.120</div><div class="ar"><span class="lbl">原因</span>RSI中性区45-55 无方向</div>
+<div class="am"><span class="c-hi">high</span><span style="color:var(--muted)">xingyao 14:35:07</span></div></div></div></div>
+<div class="pnl"><div class="pt">📊 回测复盘 & 每日学习</div><div class="sc">
+<div style="font-size:9px;color:var(--muted);margin-bottom:3px">策略表现(近30日)</div>
+<div class="br"><span class="met">510300 MA交叉</span><span class="val v-up">+2.8%</span></div>
+<div class="br"><span class="met">510300 RSI超卖</span><span class="val v-dn">-1.2%</span></div>
+<div class="br"><span class="met">A股动量候选</span><span class="val v-up">+5.1%</span></div>
+<div style="font-size:9px;color:var(--muted);margin:6px 0 3px">因子IC(近60日)</div>
+<div class="br"><span class="met">动量因子</span><span>IC=0.032</span></div><div class="br"><span class="met">波动率反向</span><span>IC=0.021</span></div>
+<div style="font-size:9px;color:var(--muted);margin:6px 0 3px">📝 每日学习 & 优化</div>
+<div class="li"><strong>0612 周五</strong><div>510300尾盘+1.41%,早盘低开未触发</div><div class="act">→ 优化: ATR_BAND 1.5→2.0</div></div>
+<div class="li"><strong>0611 周四</strong><div>ETF溢价0.32%→收盘回落</div><div class="act">→ 新增折溢价动作卡阈值</div></div>
+<div class="li"><strong>0610 周三</strong><div>候选池排序因两融缺失偏差</div><div class="act">→ P2-两融接入后重训权重</div></div></div></div>
+<div class="pnl"><div class="pt">📐 ETF期权 T型报价</div><div class="sc">
+<div style="display:flex;gap:2px;margin-bottom:4px"><button class="tb act">510300期权</button><button class="tb">50ETF期权</button></div>
+<div style="display:flex;font-size:8px;color:var(--muted);padding:2px 3px;border-bottom:1px solid var(--border)">
+<span style="min-width:45px">行权价</span><span style="flex:1;text-align:right">Call</span><span style="width:38px;text-align:right">OI</span><span style="width:10px"></span><span style="flex:1;text-align:right">Put</span><span style="width:38px;text-align:right">OI</span></div>
+<div class="or"><span class="strike">4.700</span><span class="call wl-up">0.138</span><span>12k</span><span style="width:10px"></span><span class="put wl-dn">0.021</span><span>8k</span></div>
+<div class="or"><span class="strike">4.800</span><span class="call wl-dn">0.085</span><span>28k</span><span style="width:10px"></span><span class="put wl-up">0.045</span><span>15k</span></div>
+<div class="or" style="background:rgba(250,204,21,0.08)"><span class="strike" style="color:#facc15">4.900</span><span class="call wl-up">0.042</span><span>45k</span><span style="width:10px"></span><span class="put wl-dn">0.098</span><span>22k</span></div>
+<div class="or"><span class="strike">5.000</span><span class="call wl-dn">0.018</span><span>18k</span><span style="width:10px"></span><span class="put wl-up">0.175</span><span>11k</span></div>
+<div style="font-size:9px;color:var(--muted);margin:6px 0 3px">关键指标</div>
+<div class="br"><span class="met">Put/Call Ratio</span><span>0.78</span></div><div class="br"><span class="met">最大OI Call</span><span>4.900</span></div><div class="br"><span class="met">最大OI Put</span><span>4.900</span></div><div class="br"><span class="met">ATM合约</span><span>4.900</span></div>
+<div style="font-size:8px;color:var(--muted);margin-top:4px">⏳ 后续: IV、Greeks (Phase 3)</div></div></div>
+</div></body></html>
