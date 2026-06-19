@@ -5,6 +5,7 @@
 > v1 中规划的"星耀优先"战略已进入实质落地阶段。
 > SDK 安装完成、环境变量配置完成、全接口测试通过。
 > 详细连接状态见 [登录配置](xingyao_login_setup.md)，架构设计见 [MCP-Agent 三层架构](xingyao_mcp_agent_architecture.md)。
+> 梅森交易知识库与持仓雷达融合见 [梅森 + 星耀综合体](mason_xingyao_integration.md)。
 
 ## 战略状态更新
 
@@ -20,6 +21,7 @@
 | 独立连接器 `connectors/xingyao.py` | ✅ 完成 | 2026-06-18 |
 | MCP Server 封装 `tools/xingyao_mcp_server.py` | ✅ 完成 | 2026-06-18 |
 | MCP-Agent 三层架构文档 | ✅ 完成 | 2026-06-18 |
+| 梅森 + 星耀持仓雷达 | ✅ 完成 | 2026-06-19 |
 | monitor.py 星耀函数 | ✅ 已有 20+ 函数 | - |
 | 星耀工作台 v2 HTML 原型 | ✅ 已有 | - |
 | FFD MCP 启用 | ⏳ 待启用 | - |
@@ -75,7 +77,17 @@
 | `xingyao_search_stocks` | 代码搜索 |
 | `xingyao_diagnostics` | 完整诊断 |
 
-### 3. 三层架构文档
+### 3. 梅森 + 星耀持仓雷达 (`tools/portfolio_radar_engine.py`)
+
+持仓雷达现在会调用 `tools/mason_signal_engine.py` 输出梅森动作卡：
+
+- 主线/支线：识别科技、光通信、半导体、小金属、港股、金融等风险桶
+- 均线引力：根据价格与 MA20 的乖离率判断是否追高
+- 双跌买点：用近 5 日回踩结构做低吸条件提示
+- 同方向风险：识别 `515050` + `600487` 这类账户内重复暴露
+- 账户纪律：按浮亏线输出减仓/清仓提示
+
+### 4. 三层架构文档
 
 详见 [MCP-Agent 三层架构设计](xingyao_mcp_agent_architecture.md)：
 

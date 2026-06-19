@@ -38,6 +38,11 @@ except Exception as e:
 
 ROOT = Path(__file__).resolve().parent.parent
 
+try:
+    from tools.mason_signal_engine import mason_analyze_position
+except Exception:  # pragma: no cover - radar can still run without Mason layer
+    mason_analyze_position = None
+
 # 输出目录：优先用环境变量，其次 WorkBuddy 工作区，最后项目 data/
 _wb = os.environ.get("WB_WORKSPACE", "")
 if _wb and Path(_wb).exists():
@@ -116,164 +121,6 @@ def xingyao_login():
     return ad
 
 
-# ─── 梅森知识库：ETF → 题材方向映射 ──────────────────────────────────
-# 用于判断主线/支线、同方向风险
-ETF_THEME_MAP = {
-    "588000": {"name": "科创50ETF",  "theme": "科技", "sub": "半导体/芯片", "is_main": True},
-    "512100": {"name": "中证1000ETF", "theme": "科技", "sub": "中小盘成长", "is_main": True},
-    "512760": {"name": "半导体ETF",  "theme": "科技", "sub": "半导体",   "is_main": True},
-    "515050": {"name": "通信ETF",   "theme": "科技", "sub": "AI光互联",  "is_main": True},
-    "510300": {"name": "沪深300ETF", "theme": "宽基", "sub": "大盘",     "is_main": False},
-    "510500": {"name": "中证500ETF", "theme": "宽基", "sub": "中盘",     "is_main": False},
-    "512880": {"name": "证券ETF",   "theme": "金融", "sub": "券商",     "is_main": False},
-    "513180": {"name": "恒生科技ETF","theme": "港股", "sub": "科技港股", "is_main": False},
-    "518880": {"name": "黄金ETF",   "theme": "避险", "sub": "黄金",     "is_main": False},
-    "159870": {"name": "化工ETF",   "theme": "周期", "sub": "化工",     "is_main": False},
-    "513310": {"name": "中韩半导体ETF", "theme": "科技", "sub": "半导体", "is_main": True},
-}
-
-# 账户仓位参数（与 SKILL.md 保持一致）
-ACCOUNT_PARAMS = {
-    "total_assets": 450000,   # 总资产约45万
-    "max_single_weight": 0.25,   # 单只上限25%
-    "max_theme_weight": {          # 同方向合计上限
-        "科技": 0.50,
-        "金融": 0.30,
-        "港股": 0.20,
-        "周期": 0.15,
-    },
-    "stop_loss_single": -0.08,   # 单只-8%减仓
-    "stop_loss_clear": -0.12,    # 单只-12%清仓
-}
-
-
-def mason_analyze_position(item: dict, portfolio: dict) -> dict:
-    """
-    对单个持仓位置做梅森体系分析，返回动作卡字段。
-    item: fetch_radar_data 返回的单个标的 dict
-    portfolio: portfolio.json 的完整内容（含 positions）
-    """
-    code = item["code"]
-    price = item.get("price")
-    ma20  = item.get("ma20")
-    pct   = item.get("pct_change", 0) or 0
-    kline_closes = item.get("kline_closes", [])
-
-    theme_info = ETF_THEME_MAP.get(code, {"theme": "未知", "sub": "", "is_main": False})
-    theme = theme_info["theme"]
-    is_main = theme_info["is_main"]
-
-    # 1. 大势判断
-    trend_ok = False
-    trend_note = ""
-    if price and ma20:
-        if price > ma20:
-            trend_ok = True
-            trend_note = f"价格站上MA20（{price:.4f} > {ma20:.4f}）✅"
-        else:
-            trend_note = f"价格低于MA20（{price:.4f} < {ma20:.4f}）⚠"
-    else:
-        trend_note = "MA20数据缺失，无法判断趋势"
-
-    # 2. 乖离率（均线引力）
-    deviation = None
-    deviation_note = ""
-    if price and ma20:
-        deviation = (price - ma20) / ma20 * 100
-        if deviation > 5:
-            deviation_note = f"乖离率+{deviation:.1f}%，偏离过大，不追高 ❌"
-        elif deviation < -3:
-            deviation_note = f"乖离率{deviation:.1f}%，超跌区，可关注双跌买点 🔍"
-        else:
-            deviation_note = f"乖离率{deviation:+.1f}%，正常区间 ✅"
-
-    # 3. 双跌买点判断（简化版：近5日是否有两次回踩）
-    double_drop = False
-    double_drop_note = "K线数据不足，无法判断双跌买点"
-    if len(kline_closes) >= 5:
-        # 找近5日低点
-        recent = kline_closes[-5:]
-        lows = []
-        for i in range(1, len(recent)-1):
-            if recent[i] < recent[i-1] and recent[i] < recent[i+1]:
-                lows.append((i, recent[i]))
-        if len(lows) >= 2:
-            first_low, first_val = lows[-2]
-            second_low, second_val = lows[-1]
-            if second_val >= first_val * 0.98:  # 第二跌不破第一跌2%以内
-                double_drop = True
-                double_drop_note = f"近5日出现双跌买点（第二跌{second_val:.4f} ≥ 第一跌{first_val:.4f}）✅"
-            else:
-                double_drop_note = f"近5日有两次回跌，但第二跌破位 ⚠"
-        else:
-            double_drop_note = "近5日未出现明显双跌形态"
-
-    # 4. 同方向风险
-    positions = portfolio.get("positions", [])
-    same_theme_codes = [p["code"] for p in positions if p["code"] != code]
-    # 找同theme的已持有标的
-    same_theme_held = []
-    for p in positions:
-        if p["code"] == code:
-            continue
-        held_theme = ETF_THEME_MAP.get(p["code"], {}).get("theme", "")
-        if held_theme == theme:
-            same_theme_held.append(p["code"])
-    same_dir_note = ""
-    if same_theme_held:
-        same_dir_note = f"账户已有同方向（{theme}）：{', '.join(same_theme_held)} ⚠ 谨慎加仓"
-    else:
-        same_dir_note = f"账户无同方向（{theme}）持仓 ✅"
-
-    # 5. 追高判断
-    chase_note = ""
-    action = "观察"
-    if pct > 3:
-        chase_note = f"今日涨幅+{pct:.1f}%，追高风险 ❌"
-        action = "不买，等回踩"
-    elif pct < -2:
-        chase_note = f"今日跌幅{pct:.1f}%，关注承接"
-        if double_drop and trend_ok:
-            action = "可低吸（核心仓1/3）"
-    elif pct > 0 and trend_ok and not same_theme_held:
-        action = "持有观察"
-    elif trend_ok and not same_theme_held:
-        action = "可关注"
-
-    # 6. 止损判断
-    profit_pct = item.get("profit_pct")
-    stop_note = ""
-    if profit_pct is not None:
-        if profit_pct < -12:
-            stop_note = f"浮亏{profit_pct:.1f}%，已达清仓线 ❌ 建议清仓"
-            action = "清仓"
-        elif profit_pct < -8:
-            stop_note = f"浮亏{profit_pct:.1f}%，已达减仓线 ⚠ 建议减仓"
-            if action == "观察":
-                action = "减仓"
-        elif profit_pct > 20:
-            stop_note = f"浮盈{profit_pct:.1f}%，可考虑止盈 ✅"
-        else:
-            stop_note = f"浮盈/亏{profit_pct:+.1f}%，在正常区间"
-
-    # 7. 主线判断
-    main_theme_note = f"{theme_info['sub']} {'是主线 ✅' if is_main else '是支线，脉冲行情 ⚠'}"
-
-    return {
-        "mason_action": action,
-        "mason_trend": trend_note,
-        "mason_deviation": deviation_note,
-        "mason_double_drop": double_drop_note,
-        "mason_same_dir": same_dir_note,
-        "mason_chase": chase_note,
-        "mason_stop": stop_note,
-        "mason_main_theme": main_theme_note,
-        "mason_deviation_pct": round(deviation, 2) if deviation else None,
-        "mason_theme": theme,
-        "mason_is_main": is_main,
-    }
-
-
 # ─── 数据获取 ─────────────────────────────────────────────────────────
 
 def _norm_code(code: str) -> str:
@@ -283,7 +130,7 @@ def _norm_code(code: str) -> str:
     return f"{code}.SH" if code.startswith(("5", "6", "9")) else f"{code}.SZ"
 
 
-def fetch_radar_data(positions: list, ad) -> dict:
+def fetch_radar_data(positions: list, ad, portfolio: dict | None = None) -> dict:
     base = ad.BaseData()
     calendar = base.get_calendar()
     market = ad.MarketData(calendar)
@@ -403,17 +250,14 @@ def fetch_radar_data(positions: list, ad) -> dict:
         }
 
     # ─── 梅森分析层 ─────────────────────────────────────
-    try:
-        _pf_path = Path(__file__).resolve().parent.parent / "portfolio.json"
-        _pf_data = json.loads(_pf_path.read_text(encoding="utf-8")) if _pf_path.exists() else {"positions": []}
-    except Exception:
-        _pf_data = {"positions": []}
-    for code, item in result.items():
-        try:
-            mason = mason_analyze_position(item, _pf_data)
-            result[code].update(mason)
-        except Exception as e:
-            logger.warning("Mason analysis failed for %s: %s", code, e)
+    if mason_analyze_position:
+        portfolio = portfolio or {"positions": positions}
+        for code, item in result.items():
+            try:
+                mason = mason_analyze_position(item, portfolio)
+                result[code].update(mason)
+            except Exception as e:
+                logger.warning("Mason analysis failed for %s: %s", code, e)
 
     return result
 
@@ -692,7 +536,7 @@ def run_portfolio_radar_once(portfolio_path: str = None) -> str:
         logger.info("Portfolio radar: logging in to Xingyao...")
         ad = xingyao_login()
         logger.info("Portfolio radar: login OK, fetching data...")
-        radar = fetch_radar_data(positions, ad)
+        radar = fetch_radar_data(positions, ad, portfolio=portfolio)
         source_ok = any(v.get("price") is not None for v in radar.values())
         logger.info("Portfolio radar: data fetched, source_ok=%s", source_ok)
         with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()):

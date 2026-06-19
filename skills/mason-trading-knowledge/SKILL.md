@@ -1,18 +1,6 @@
 ---
 name: mason-trading-knowledge
-description: >
-  梅森交易知识体系。包含顺大势逆小势、双跌买点、均线引力、主线判断、
-  同方向风险过滤、账户仓位纪律等核心方法论。
-  当需要对行情给出"买/不买/持有/减/清"动作卡时使用此 skill。
-trigger:
-  - 梅森
-  - 顺大势
-  - 双跌买点
-  - 均线引力
-  - 主线支线
-  - 动作卡
-  - 交易纪律
-  - 同方向风险
+description: Personal Mason/梅森/梅家圈 A-share trading knowledge-base workflow for turning local reports, PDFs, Excel sheets, screenshots, circle notes, and Xingyao radar data into theme logic, watchlist context, buy/sell/hold/reduce/clear action cards, position discipline, and post-close review. Use when the user mentions 梅森, 梅家圈, 梅花庄, 双跌买点, 顺大势逆小势, 均线引力, 主线支线, 同方向风险, 动作卡, 交易纪律, or asks how a theme/stock/ETF fits their account.
 ---
 
 # 梅森交易知识体系
