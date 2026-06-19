@@ -10,7 +10,7 @@ The project currently keeps connector logic inside `monitor.py` to avoid prematu
 | Tencent | single-symbol fallback quote | used when Eastmoney fails |
 | Sina | broad-market and single-symbol fallback | useful for A-share fallback scan |
 | Yahoo | additional fallback quote path | useful for some ETF symbols |
-| Xingyao/AmazingData | optional option basics | requires local SDK path and credentials |
+| Xingyao/AmazingData | **primary market data** (A-share, ETF, financials) | ✅ live (2026-06-18); `connectors/xingyao.py` |
 | WindPy | optional trading-day and single-symbol validation | read-only verification layer for trade calendar and key quotes |
 | Public web scraper | optional public-page fetcher | `connectors/public_web_scraper.py`; supports Scrapling if installed and falls back to requests |
 | Local files | portfolio, reports, paper journal | deterministic and auditable |
@@ -35,7 +35,8 @@ connectors/
 |-- sina.py
 |-- tencent.py
 |-- yahoo.py
-|-- xingyao.py
+|-- xingyao.py             ← ✅ 已实现
+|-- ifind_http.py          ← ✅ 已实现
 |-- public_web_scraper.py
 `-- file_exports.py
 ```

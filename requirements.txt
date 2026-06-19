@@ -2,3 +2,13 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
 pytz==2024.1
+
+# 星耀 AmazingData SDK (本地安装，非 PyPI)
+# 需要手动安装 tgw-1.0.8.7-py3-none-any.whl 和 AmazingData-1.1.6-cp3xx-none-any.whl
+# 详见 docs/xingyao_login_setup.md
+
+# MCP Server 封装 (可选)
+# mcp>=1.0.0
+
+# 财务数据 HDF5 支持 (星耀本地缓存需要)
+# tables>=3.9.0  # pip install tables

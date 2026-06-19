@@ -1,38 +1,79 @@
 {
-  "snapshot_time": "YYYY-MM-DD HH:MM:SS",
-  "total_capital": 100000,
+  "snapshot_time": "2026-06-18 17:14:45",
+  "total_capital": 300000,
   "cash": 60000,
-  "securities_market_value": 40000,
+  "securities_market_value": 240000,
   "max_single_weight": 0.25,
-  "default_buy_amount": 10000,
+  "default_buy_amount": 15000,
   "deployable_cash": 30000,
-  "reserve_cash": 20000,
-  "daily_loss_soft_stop": -1200,
-  "daily_loss_hard_stop": -2000,
+  "reserve_cash": 30000,
+  "daily_loss_soft_stop": -3000,
+  "daily_loss_hard_stop": -5000,
   "tactical_callable_cash": 0,
-  "cash_policy_note": "Example only. Copy this file to portfolio.local.json and enter private account values there.",
+  "cash_policy_note": "Example portfolio structure. Copy to portfolio.local.json with real values.",
   "positions": [
     {
-      "code": "510300",
-      "name": "CSI 300 ETF example",
-      "cost": 4.0,
-      "shares": 1000,
-      "target_weight": 0.1,
-      "buy_below": 3.8,
-      "sell_above": 4.3,
-      "stop_loss": 3.6,
-      "grid_step": 0.03,
-      "note": "Example position. Replace in portfolio.local.json."
+      "code": "588000.SH",
+      "name": "科创50ETF",
+      "shares": 50000,
+      "cost": 1.05,
+      "profit_pct": 3.5,
+      "target_weight": 0.20,
+      "note": "盈利持仓"
+    },
+    {
+      "code": "512100.SH",
+      "name": "中证1000ETF",
+      "shares": 40000,
+      "cost": 2.40,
+      "profit_pct": 2.1,
+      "target_weight": 0.15,
+      "note": "盈利持仓"
+    },
+    {
+      "code": "512000.SH",
+      "name": "券商ETF",
+      "shares": 30000,
+      "cost": 0.95,
+      "profit_pct": -12.5,
+      "target_weight": 0.15,
+      "note": "深套，需关注"
+    },
+    {
+      "code": "159870.SZ",
+      "name": "化工ETF",
+      "shares": 20000,
+      "cost": 1.10,
+      "profit_pct": -28.15,
+      "target_weight": 0.10,
+      "note": "深套-28.15%，重点减压目标"
+    },
+    {
+      "code": "513180.SH",
+      "name": "恒生科技ETF",
+      "shares": 30000,
+      "cost": 0.80,
+      "profit_pct": -56.14,
+      "target_weight": 0.10,
+      "note": "深套-56.14%，QDII 溢价风险"
     }
   ],
   "watchlist": [
-    "510300",
-    "512100",
-    "588000"
+    "588000.SH",
+    "512100.SH",
+    "512000.SH",
+    "159870.SZ",
+    "513180.SH",
+    "510050.SH",
+    "510880.SH"
   ],
-  "high_risk_codes": [],
+  "high_risk_codes": [
+    "159870.SZ",
+    "513180.SH"
+  ],
   "qdii_codes": [
-    "513500",
-    "159696"
+    "513180.SH",
+    "513500.SH",
+    "159696.SZ"
   ]
 }
