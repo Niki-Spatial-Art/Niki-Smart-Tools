@@ -1,0 +1,3 @@
+display_name: 梅森交易知识库
+short_description: 把梅森/梅家圈资料库转成主题逻辑、盘中动作卡和仓位纪律。
+default_prompt: 用梅森交易知识库分析这个题材或持仓，输出买/不买/持有/减/清动作卡。
