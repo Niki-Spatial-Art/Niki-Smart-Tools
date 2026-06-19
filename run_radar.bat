@@ -5,11 +5,22 @@ echo  持仓ETF雷达 - Portfolio Radar
 echo ==============================
 echo.
 
-REM 设置星耀环境变量
-set AD_USERNAME=10500164719
-set AD_PASSWORD=SHANshan252112
-set AD_HOST=101.230.159.234
-set AD_PORT=8600
+REM 星耀账号密码请放在本机环境变量或 .env 中，不要写进 Git。
+REM 需要的变量：AD_USERNAME / AD_PASSWORD / AD_HOST / AD_PORT
+if "%AD_HOST%"=="" set AD_HOST=101.230.159.234
+if "%AD_PORT%"=="" set AD_PORT=8600
+
+if "%AD_USERNAME%"=="" (
+    echo [错误] 缺少 AD_USERNAME。请先在本机环境变量或 .env 中配置星耀账号。
+    pause
+    exit /b 1
+)
+
+if "%AD_PASSWORD%"=="" (
+    echo [错误] 缺少 AD_PASSWORD。请先在本机环境变量或 .env 中配置星耀密码。
+    pause
+    exit /b 1
+)
 
 REM 重定向 tgw 证书路径到用户目录（避免 C:\Users\Public\Documents 权限问题）
 set USERPROFILE=%USERPROFILE%
