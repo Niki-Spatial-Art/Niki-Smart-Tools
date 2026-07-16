@@ -601,11 +601,11 @@ def option_time_risk(days_to_expiry: int, premium: float) -> str:
 
 
 def xingyao_sdk_paths() -> List[str]:
-    return xingyao_connector.sdk_paths()
+    return xingyao_connector.xingyao_sdk_paths()
 
 
 def add_xingyao_sdk_paths() -> None:
-    xingyao_connector.add_sdk_paths()
+    xingyao_connector.add_xingyao_sdk_paths()
 
 
 def xingyao_cache_path() -> Path:
@@ -765,7 +765,32 @@ def xingyao_market_code(code: str) -> str:
 
 def fetch_xingyao_snapshot_rows(codes: List[str]) -> Dict:
     """Read AmazingData market snapshots for ETF/A-share codes when permissions allow it."""
-    return xingyao_connector.fetch_snapshot_rows(codes)
+    requested = [xingyao_market_code(code) for code in codes]
+    try:
+        raw = xingyao_connector.get_snapshot(requested)
+        rows = xingyao_market_result_to_rows(raw, latest_only=True)
+        if not rows and isinstance(raw, dict):
+            for market_code, payload in raw.items():
+                for row in dataframe_to_rows(payload):
+                    row.setdefault("code", market_code)
+                    rows.append(row)
+        return {
+            "enabled": True,
+            "source": "xingyao_snapshot",
+            "requested": requested,
+            "rows": rows,
+            "row_count": len(rows),
+            "error": "" if rows else "empty snapshot response",
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "source": "xingyao_snapshot",
+            "requested": requested,
+            "rows": [],
+            "row_count": 0,
+            "error": str(exc),
+        }
 
 
 def fetch_xingyao_kline_probe(codes: List[str]) -> Dict:
@@ -782,11 +807,36 @@ def fetch_xingyao_kline_rows(
 
     period uses AmazingData constant names such as day/min1/min5.
     """
-    return xingyao_connector.fetch_kline_rows(codes, days=days, max_rows=max_rows, period=period)
+    requested = [xingyao_market_code(code) for code in codes]
+    end_date = datetime.now().strftime("%Y%m%d")
+    begin_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+    try:
+        raw = xingyao_connector.get_kline(requested, int(begin_date), int(end_date), period=period)
+        rows = xingyao_market_result_to_rows(raw, max_rows=max_rows, latest_only=period.startswith("min"))
+        return {
+            "enabled": True,
+            "source": "xingyao_kline",
+            "requested": requested,
+            "rows": rows,
+            "row_count": len(rows),
+            "error": "" if rows else "empty kline response",
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "source": "xingyao_kline",
+            "requested": requested,
+            "rows": [],
+            "row_count": 0,
+            "error": str(exc),
+        }
 
 
 def xingyao_sdk_capabilities() -> Dict:
-    capabilities = xingyao_connector.diagnose_sdk()
+    diagnose = getattr(xingyao_connector, "diagnose_sdk", None)
+    if diagnose is None:
+        diagnose = xingyao_connector.diagnostics
+    capabilities = diagnose()
     capabilities.setdefault("amazingdata_methods", {})
     return capabilities
 

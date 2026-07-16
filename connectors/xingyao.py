@@ -220,7 +220,11 @@ def get_kline(
     )
 
 
-def get_snapshot(codes: List[str]) -> Dict[str, Any]:
+def get_snapshot(
+    codes: List[str],
+    begin_date: Optional[int] = None,
+    end_date: Optional[int] = None,
+) -> Dict[str, Any]:
     """获取实时快照。
 
     Args:
@@ -232,7 +236,12 @@ def get_snapshot(codes: List[str]) -> Dict[str, Any]:
     ad = login()
     calendar = get_calendar()
     market = ad.MarketData(calendar)
-    return market.query_snapshot(code_list=codes)
+    trade_date = int(datetime.now().strftime("%Y%m%d"))
+    return market.query_snapshot(
+        code_list=codes,
+        begin_date=begin_date or trade_date,
+        end_date=end_date or trade_date,
+    )
 
 
 # ---------------------------------------------------------------------------
