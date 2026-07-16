@@ -31,12 +31,19 @@ REPORT_MD = ROOT / "reports" / "latest.md"
 IFIND_CLEAN_DIR = ROOT / "reports" / "ifind_clean"
 JOURNAL = ROOT / "data" / "paper_trade_journal.csv"
 OPTION_JOURNAL = ROOT / "data" / "option_sim_journal.csv"
-BROKER = ROOT / "data" / "broker_account_snapshots.json"
+BROKER = ROOT / "data" / "broker_account_snapshots.local.json"
+BROKER_FALLBACK = ROOT / "data" / "broker_account_snapshots.json"
+A_STOCK_ROUTE = ROOT / "data" / "a_stock_radar_snapshot.json"
 EASTMONEY_PROBE = ROOT / "data" / "latest_eastmoney_probe.json"
 IFIND_PROBE = ROOT / "data" / "latest_ifind_http_probe.json"
 IFIND_USAGE = ROOT / "data" / "ifind_usage_snapshot.json"
 IFIND_STRUCTURE = ROOT / "data" / "ifind_market_structure.json"
 XINGYAO = ROOT / "data" / "latest_xingyao_data_probe.json"
+OPTION_CHAIN = ROOT / "data" / "latest_xingyao_option_chain.json"
+OPTION_SURFACE = ROOT / "data" / "latest_xingyao_option_surface.json"
+XINGYAO_STORE_MANIFEST = ROOT / "data" / "xingyao_research_store" / "latest_manifest.json"
+XINGYAO_INTRADAY_ALERTS = ROOT / "data" / "latest_xingyao_intraday_alerts.json"
+XINGYAO_DUCK_QUERY_MD = ROOT / "reports" / "latest_xingyao_duck_query.md"
 YUHENG = ROOT / "data" / "latest_yuheng_probe.json"
 LEARNING = ROOT / "reports" / "learning_intake.md"
 POST_CLOSE = ROOT / "data" / "post_close_system_snapshot.json"
@@ -59,6 +66,13 @@ def read_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         return {"_error": f"{type(exc).__name__}: {exc}"}
+
+
+def read_broker_snapshot() -> dict:
+    payload = read_json(BROKER)
+    if payload and not payload.get("_error"):
+        return payload
+    return read_json(BROKER_FALLBACK)
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -151,6 +165,170 @@ def latest_snapshot(payload: dict) -> dict:
     if rows:
         return rows[-1]
     return payload if isinstance(payload, dict) else {}
+
+
+def is_etf_code(code: str) -> bool:
+    return str(code or "").startswith(("510", "512", "513", "515", "516", "518", "588", "159"))
+
+
+def broker_positions(broker: dict) -> list[dict]:
+    return [
+        pos for pos in (latest_snapshot(broker).get("positions_visible") or [])
+        if as_float(pos.get("shares")) > 0
+    ]
+
+
+def clean_items_by_code(clean_radar: dict) -> dict[str, dict]:
+    return {str(item.get("code") or ""): item for item in (clean_radar.get("items") or [])}
+
+
+def broker_watchlist(broker: dict) -> list[dict]:
+    snap = latest_snapshot(broker)
+    return [
+        item for item in (snap.get("watchlist_visible") or [])
+        if str(item.get("code") or "") and not is_etf_code(str(item.get("code") or ""))
+    ]
+
+
+def market_index_summary(snap: dict) -> str:
+    rows = snap.get("market_indices") or []
+    if not rows:
+        return "上证小绿、深成小红、北证偏弱；旧ETF先处理，新A股先观察。"
+    weak = [f"{row.get('name')} {pct(row.get('change_pct'))}" for row in rows if as_float(row.get("change_pct")) < 0]
+    strong = [f"{row.get('name')} {pct(row.get('change_pct'))}" for row in rows if as_float(row.get("change_pct")) >= 0]
+    parts = weak + strong
+    return "；".join(parts[:4]) + "。"
+
+
+def intraday_etf_action(pos: dict, clean_item: dict) -> tuple[str, str, str]:
+    code = str(pos.get("code") or "")
+    price = as_float(pos.get("price") or clean_item.get("close"))
+    stop = as_float(clean_item.get("stop_loss"))
+    sell_above = as_float(clean_item.get("sell_above"))
+    daily = as_float(pos.get("daily_profit"))
+    ref = as_float(pos.get("reference_profit"))
+    if code == "588000" and price < 1.76:
+        return "利润保护", "午间已跌破 1.76，不补仓；只看能否收回 1.75-1.76，不能收回就继续保护利润。", "warn"
+    if code == "588000":
+        return "持有", "利润仓，只守不加；1.76 下方不再补仓。", "ok"
+    if code == "512100":
+        if price < 3.32:
+            return "持有/观察", "低于 3.32 修复线，不加仓；午后只看 3.25 防守和 3.30-3.32 反抽。", "warn"
+        return "持有", "中证1000仍是主要仓位，站上修复线后再讨论加仓。", "ok"
+    if code == "512000" and price < 0.48:
+        return "风险线", "已在 0.48 风险线附近，不补仓；午后不能收回 0.48 就只做风险记录。", "danger"
+    if code == "512000":
+        return "等反弹减压", "弱修复，不补仓；只看 0.49-0.50 反弹区是否减压。", "warn"
+    if code == "159870":
+        return "持有等压", "今天相对抗跌，但仍是亏损修复仓；0.80 守住先持有，0.82-0.86 反弹区减压。", "warn"
+    if code == "513130" and price < 0.59:
+        return "风险观察", "低于 0.59，不补仓；午后只看是否收回 0.59。", "danger"
+    if code == "513130":
+        return "风险观察", "QDII 弱势仓，不补；0.59-0.62 只看风险，不主动扩大仓位。", "danger"
+    if stop and price <= stop:
+        return "风险线", f"现价 {fmt_price(price)} 已在/低于 {fmt_price(stop)}，先控风险。", "danger"
+    if sell_above and price >= sell_above:
+        return "处理线", f"现价接近 {fmt_price(sell_above)}，先考虑减压/保护收益。", "warn"
+    if ref > 0 and daily >= 0:
+        return "持有", "利润仓先看承接，不追加。", "ok"
+    return "观察", "没有新买点，先等结构更清楚。", "warn"
+
+
+def intraday_stock_action(item: dict) -> tuple[str, str, str]:
+    code = str(item.get("code") or "")
+    change = as_float(item.get("change_pct") if item.get("change_pct") is not None else item.get("change"))
+    dist_ma20 = as_float(item.get("dist_ma20"))
+    ret20 = as_float(item.get("ret20"))
+    trend = as_float(item.get("trend_score"))
+    if code in {"600183", "600027", "600110"} and change > 0:
+        return "逆势观察", "指数普跌时能红，放观察池；但午后仍不追，只看承接。", "ok"
+    if code in {"002463", "600183"}:
+        return "观察不追", "AI硬件高位链分化，今天不做追高；只等回踩承接。", "warn"
+    if code in {"002747"}:
+        return "不抄底", "机器人/高位股今天回撤较深，先看是否止跌，不用盘中接。", "danger"
+    if change <= -4:
+        return "不接跌刀", "午间跌幅已经偏深，下午即使反抽也先当修复，不升级买入。", "danger"
+    if change <= -2.5:
+        return "观察不买", "弱于指数，下午只看能否止跌，不做主动买入。", "warn"
+    if dist_ma20 > 10 or ret20 > 25:
+        return "不追", "离均线仍远，强势票只做观察池，不升级买入。", "danger"
+    if trend >= 2:
+        return "等确认", "结构还在，但要等分时承接和板块共振。", "warn"
+    return "观察", "没有盘中买点。", "warn"
+
+
+def build_intraday_brief(report: dict, broker: dict, clean_radar: dict, option_chain: dict) -> str:
+    snap = latest_snapshot(broker)
+    positions = broker_positions(broker)
+    item_by_code = clean_items_by_code(clean_radar)
+    etf_positions = [pos for pos in positions if is_etf_code(str(pos.get("code") or ""))]
+    stock_watch = broker_watchlist(broker)
+    if not stock_watch:
+        stock_watch = [
+            item for item in (clean_radar.get("items") or [])
+            if not is_etf_code(str(item.get("code") or "")) and as_float(item.get("shares")) <= 0
+        ]
+        stock_watch = sorted(
+            stock_watch,
+            key=lambda item: (-as_float(item.get("trend_score")), -as_float(item.get("ret20")), str(item.get("code") or "")),
+        )[:6]
+    else:
+        stock_watch = sorted(stock_watch, key=lambda item: (as_float(item.get("change_pct")), str(item.get("code") or "")))[:8]
+
+    account_cards = [
+        card("账户资产", fmt_money(snap.get("total_assets") or snap.get("broker_total_capital"), 2), f"截图时间 {snap.get('snapshot_time') or '-'}。", "ok"),
+        card("可用资金", fmt_money(snap.get("available_cash") or snap.get("cash"), 2), "现金很充足，但今天不是必须买。", "ok"),
+        card("股票市值", fmt_money(snap.get("securities_market_value"), 2), f"当日盈亏 {fmt_money(snap.get('daily_profit'), 2)}。", "warn"),
+        card("盘面判断", "午间防守", market_index_summary(snap), "danger" if as_float(snap.get("daily_profit")) < -500 else "warn"),
+    ]
+
+    etf_cards = []
+    for pos in etf_positions:
+        clean_item = item_by_code.get(str(pos.get("code") or "")) or {}
+        action, note, tone = intraday_etf_action(pos, clean_item)
+        etf_cards.append(
+            status_source_card(
+                f"{pos.get('code')} {pos.get('name') or ''}",
+                action,
+                f"持仓 {fmt_number(pos.get('shares'), 0)} | 现价 {fmt_price(pos.get('price') or clean_item.get('close'))} | 市值 {fmt_money(pos.get('market_value'), 0)}",
+                note,
+                f"当日 {fmt_money(pos.get('daily_profit'), 2)}；参考 {fmt_money(pos.get('reference_profit'), 2)}；可卖 {fmt_number(pos.get('available'), 0)}。",
+                tone,
+            )
+        )
+
+    stock_cards = []
+    for item in stock_watch:
+        action, note, tone = intraday_stock_action(item)
+        stock_cards.append(
+            status_source_card(
+                f"{item.get('code')} {item.get('name') or ''}",
+                action,
+                (
+                    f"现价 {fmt_price(item.get('price'))} | 涨跌幅 {pct(item.get('change_pct'))}"
+                    if item.get("price") is not None
+                    else f"趋势分 {fmt_number(item.get('trend_score'), 0)} | 20日 {pct(item.get('ret20'))} | 离MA20 {pct(item.get('dist_ma20'))}"
+                ),
+                note,
+                "A股自选/主题票今天只用于观察强弱，不从这里直接下单。",
+                tone,
+            )
+        )
+
+    option_note = (
+        f"星耀期权链 {len(option_chain.get('rows') or [])} 条，来源 {option_chain.get('snapshot_source') or '-'}；"
+        "期权现在只做研究和风控参考，不放在盘中交易第一屏。"
+    )
+    body = (
+        metric_grid(account_cards, "top-grid")
+        + '<div class="decision-note"><strong>午间结论：</strong>当前实盘核心是 5 个ETF旧仓；A股自选只看强弱，不追跌后反抽；现金多不是买入理由。期权继续只做研究和风控参考。</div>'
+        + "<h3>ETF持仓动作</h3>"
+        + (source_grid(etf_cards, "wide") if etf_cards else '<div class="empty">没有ETF持仓。</div>')
+        + "<h3>A股观察池</h3>"
+        + (source_grid(stock_cards) if stock_cards else '<div class="empty">没有A股观察票。</div>')
+        + '<div class="decision-note"><strong>期权位置：</strong>' + esc(option_note) + "</div>"
+    )
+    return section("盘中三件事", "账户、ETF持仓、A股观察先看这里", body, "intraday")
 
 
 def is_stale(report: dict) -> bool:
@@ -430,20 +608,35 @@ def build_top_sync(report: dict, broker: dict, ifind_probe: dict, ifind_sample: 
     sample_time = ifind_sample.get("generated_at") or "-"
     clean_time = clean_radar.get("generated_at") or "-"
     stale = is_stale(report)
+    a_stock = report.get("a_stock_data_status") or {}
+    a_stock_status = a_stock.get("status") or {}
+    a_stock_route = " -> ".join(a_stock.get("route") or []) or "not generated"
     status = "旧报告，仅复盘" if stale else "新鲜，可复核"
-    command = f'cd "{ROOT}"; $env:PYTHONIOENCODING="utf-8"; python .\\tools\\ifind_clean_radar.py; python .\\tools\\ifind_http_probe.py --all --wencai'
+    command = (
+        f'cd "{ROOT}"; $env:PYTHONIOENCODING="utf-8"; '
+        "python .\\tools\\xingyao_data_probe.py; "
+        "python .\\tools\\xingyao_option_analytics.py --expiry-limit 2 --strikes-each-side 2; "
+        "python .\\tools\\xingyao_option_surface.py; "
+        "python .\\tools\\xingyao_research_store.py --fetch-timeout 20; "
+        "python .\\tools\\xingyao_intraday_alerts.py; "
+        "python .\\tools\\a_stock_radar_snapshot.py; "
+        "python .\\tools\\ifind_clean_radar.py; "
+        "python .\\tools\\ifind_http_probe.py --all --wencai"
+    )
     items = [
-        card("工作台状态", "Clean Radar 优先", f"页面渲染 {datetime.now():%Y-%m-%d %H:%M:%S}", "ok"),
-        card("Clean Radar", clean_time, f"文件 {file_time(latest_ifind_clean_radar_path())}；动作卡和强势观察都看它。", "ok"),
+        card("工作台状态", "星耀盘中优先", f"页面渲染 {datetime.now():%Y-%m-%d %H:%M:%S}", "ok"),
+        card("星耀研究链", file_time(XINGYAO_INTRADAY_ALERTS), f"研究库 {file_time(XINGYAO_STORE_MANIFEST)}；先看星耀快照、提醒和期权链。", "ok"),
+        card("Clean Radar", clean_time, f"文件 {file_time(latest_ifind_clean_radar_path())}；现在放在星耀盘中主屏之后作候选明细。", "ok"),
         card("结构化报告", meta.get("generated_at") or "-", f"文件 {file_time(REPORT)}；latest.json 现在只作旧链路参考。", "warn" if stale else ""),
         card("券商快照", snap.get("snapshot_time") or "-", f"来源 {snap.get('source') or '-'}；持仓和可卖数量优先级最高", "ok"),
-        card("iFind实时样本", sample_time, f"探针 {probe_time}；刷新后才允许盘中复核", "warn" if stale else "ok"),
+        card("本地A股路由", a_stock.get("generated_at") or "-", f"{a_stock_route}；报价 {a_stock_status.get('quote_coverage_pct', 0)}% / 日线 {a_stock_status.get('history_coverage_pct', 0)}%。", "ok" if a_stock.get("available") else "warn"),
+        card("iFind实时样本", sample_time, f"探针 {probe_time}；现在主要做A股基础/公告/候选校验", "warn" if stale else "ok"),
     ]
     return f"""
     <section class="hero">
       <div>
-        <h1>本地执行盘</h1>
-        <p>先看买不买、卖不卖、等不等，再看解释。这个盘面是给你每小时刷一次用的。</p>
+        <h1>星耀执行盘</h1>
+        <p>先看星耀实时层，再看ETF和A股动作卡。这个盘面是给你明天盘中直接用的。</p>
       </div>
       <div class="hero-actions">
         <button id="refresh-data" type="button">刷新雷达/接口</button>
@@ -454,9 +647,26 @@ def build_top_sync(report: dict, broker: dict, ifind_probe: dict, ifind_sample: 
     <div class="command-box">
       <strong>刷新命令</strong>
       <code>{esc(command)}</code>
-      <span id="sync-note">页面每 30 秒轮询状态；盘中先确认数据时间，再看买卖结论。</span>
+      <span id="sync-note">页面每 30 秒轮询状态；先确认星耀链时间，再看ETF和A股动作卡。</span>
     </div>
     """
+
+
+def build_new_entry_gate(report: dict) -> str:
+    action_stack = report.get("action_stack") or {}
+    gate = action_stack.get("new_entry_gate") or {}
+    gates = gate.get("gates") or []
+    blocked = bool(gate.get("blocked"))
+    tone = "danger" if blocked else "ok"
+    label = "停止新开仓" if blocked else "可进入人工复核"
+    cards = [
+        card("新开仓闸门", label, str(gate.get("reason") or "Waiting for the next radar refresh."), tone),
+    ]
+    for item in gates:
+        item_tone = "danger" if item.get("blocked") else "ok"
+        cards.append(card(str(item.get("level") or "gate"), "blocked" if item.get("blocked") else "passed", str(item.get("reason") or "-"), item_tone))
+    note = "先修复数据和账户状态，再看题材；已有仓位的减仓、止损和持有复核不受此闸门阻断。"
+    return section("执行闸门", "真实快照、行情新鲜度和全市场覆盖必须同时通过", metric_grid(cards) + f'<div class="decision-note">{esc(note)}</div>', "entry-gate")
 
 
 def build_execution_panel(
@@ -716,17 +926,88 @@ def build_interface_row(report: dict, broker: dict, eastmoney: dict, ifind_probe
     east_broad = list_check(eastmoney, "eastmoney_clist_push2delay")
     east_status = eastmoney.get("status") or "-"
     east_tone = "ok" if east_status == "OK" else ("warn" if east_status == "DEGRADED" else "danger")
-    xingyao_tone = "ok" if snapshot_probe.get("row_count") or kline_probe.get("row_count") else "warn"
+    xingyao_snapshot_tone = "ok" if snapshot_probe.get("valid_quote_count") or snapshot_probe.get("row_count") else "warn"
+    xingyao_option_tone = "ok" if option_basic.get("contract_count") else "warn"
     cards = [
         source_card("东方财富行情", east_status, "主入口/备用入口分开探测；备用 push2delay 可用时标记为降级可读。", f"单票 {east_stock.get('rows', 0)} 行；全市场页 {east_broad.get('rows', 0)} 行；探针 {eastmoney.get('generated_at') or '-'}。", east_tone),
         source_card("iFind实时行情", check_status(checks, "realtime_quotes"), "用于 9:40 复核持仓价、动作卡价、量价是否仍成立。", f"样本 {ifind_sample.get('generated_at') or '-'}；rows {check_rows((ifind_sample.get('checks') or {}), 'realtime_quotes')}。", "ok"),
         source_card("iFind基础/公告", f"基础 {check_status(checks, 'basic_data')} / 公告 {check_status(checks, 'report_query')}", "用于买入前排除 ST、停牌、板块权限、公告风险。", f"探针 {ifind_probe.get('generated_at') or '-'}。", "ok"),
         source_card("全市场扫描", f"{coverage.get('broad_rows_seen') or '-'} / {coverage.get('broad_scan_min_rows_target') or 5000}", "覆盖不足时动作卡全部降级观察；当前只把扫描当候选来源。", f"候选 {coverage.get('broad_candidates') or '-'}；缺口 {coverage.get('broad_missing_estimate') or 0}。", "ok"),
         source_card("券商快照", latest_snapshot(broker).get("snapshot_time") or "-", "持仓、可卖数量、当日盈亏的最高优先级证据。", "仍是手动/截图链路，未连接真实券商下单。", "warn"),
-        source_card("星耀期权", f"基础合约 {option_basic.get('contract_count') or 0}；快照 {snapshot_probe.get('row_count') or 0}；K线 {kline_probe.get('row_count') or 0}", "只能做合约匹配和仿真，不把基础合约缓存当实时盘口。", option_basic.get("cache_updated_at") or xingyao.get("run_id") or "-", xingyao_tone),
+        source_card("星耀TGW快照", f"快照 {snapshot_probe.get('valid_quote_count') or snapshot_probe.get('row_count') or 0}；K线 {kline_probe.get('row_count') or 0}", "ETF/A股快照已单独验证；K线仍待星耀技术确认 QueryKline 参数。", xingyao.get("run_id") or "-", xingyao_snapshot_tone),
+        source_card("星耀期权基础", f"基础合约 {option_basic.get('contract_count') or 0}；实时权利金 0", "只能做合约匹配和仿真；基础合约缓存不是实时盘口，也没有 IV/Greeks/OI。", option_basic.get("cache_updated_at") or "-", xingyao_option_tone),
         source_card("玉衡仿真", yuheng.get("status") or "-", "用于期权仿真客户端存在性、合约字典和日志复核；不读密码目录，不下单。", f"目录 {len((y_inventory.get('directories') or []))}；文件 {len((y_inventory.get('files') or []))}。", "ok"),
     ]
     return section("数据接口第三排", "先确认接口是否正常，再看动作", source_grid(cards, "interfaces"), "interfaces")
+
+
+def build_xingyao_intraday_panel(alerts: dict, manifest: dict) -> str:
+    if not alerts and not manifest:
+        return section("星耀盘中研究", "等待研究库和提醒生成", '<div class="empty">运行 python tools\\xingyao_research_store.py 和 python tools\\xingyao_intraday_alerts.py。</div>', "xingyao-research")
+    manifest = manifest or {}
+    errors = manifest.get("errors") or {}
+    table_status = manifest.get("table_status") or {}
+    fresh_rows = manifest.get("fresh_rows") or {}
+    live_errors = [name for name, message in errors.items() if message]
+    live_note = "TGW 本轮正常写入。"
+    live_tone = "ok"
+    if live_errors:
+        live_note = "TGW 本轮超时/失败：" + "；".join(f"{name} {errors.get(name)}" for name in live_errors[:3])
+        live_tone = "warn"
+    status_text = (
+        f"snapshot {table_status.get('snapshot') or '-'} / "
+        f"min1 {table_status.get('kline_min1') or '-'} / "
+        f"day {table_status.get('kline_day') or '-'} / "
+        f"option {table_status.get('option_chain') or '-'}"
+    )
+    alert_cards = []
+    for item in (alerts.get("alerts") or [])[:6]:
+        tone = str(item.get("tone") or "warn")
+        delta = item.get("daily_profit_change_from_prev")
+        delta_text = "" if delta is None else f"；较上次 {fmt_money(delta, 2)}"
+        alert_cards.append(
+            status_source_card(
+                f"{item.get('code')} {item.get('name') or ''}",
+                str(item.get("title") or "观察"),
+                f"现价 {fmt_price(item.get('price'))} | 当日 {fmt_money(item.get('daily_profit'), 2)}{delta_text}",
+                str(item.get("action") or ""),
+                "这是盘中提醒，不是自动交易指令；仍需结合盘口和尾盘确认。",
+                tone,
+            )
+        )
+    watch_cards = []
+    for item in (alerts.get("watch_alerts") or [])[:6]:
+        watch_cards.append(
+            status_source_card(
+                f"{item.get('code')} {item.get('name') or ''}",
+                str(item.get("title") or "观察"),
+                f"涨跌幅 {pct(item.get('change_pct'))}",
+                "只进观察池，不升级成买入。",
+                "强票等回踩，弱票不接跌后反抽。",
+                str(item.get("tone") or "warn"),
+            )
+        )
+    store = alerts.get("xingyao_store") or manifest or {}
+    query_note = (
+        f"SQLite {((manifest.get('paths') or {}).get('sqlite') if manifest else '') or '-'}；"
+        f"DuckDB 查询报告 {file_time(XINGYAO_DUCK_QUERY_MD)}。"
+    )
+    store_cards = [
+        card("提醒时间", alerts.get("snapshot_time") or "-", f"生成 {alerts.get('generated_at') or '-'}。", "ok" if alerts else "warn"),
+        card("当日盈亏变化", fmt_money(alerts.get("daily_profit_change_from_prev"), 2), f"最新当日盈亏 {fmt_money(alerts.get('daily_profit'), 2)}。", "ok" if as_float(alerts.get("daily_profit_change_from_prev")) > 0 else "warn"),
+        card("研究库行数", f"{store.get('snapshot_rows') or 0}/{store.get('kline_min1_rows') or 0}/{store.get('kline_day_rows') or 0}/{store.get('option_chain_rows') or 0}", f"snapshot / min1 / day / option；{status_text}。", "ok"),
+        card("本轮新取数", f"{fresh_rows.get('snapshot') or 0}/{fresh_rows.get('kline_min1') or 0}/{fresh_rows.get('kline_day') or 0}/{fresh_rows.get('option_chain') or 0}", live_note, live_tone),
+        card("查询层", "DuckDB/SQLite", query_note, "ok" if manifest else "warn"),
+    ]
+    body = (
+        metric_grid(store_cards, "top-grid")
+        + '<div class="decision-note"><strong>下午结论：</strong>不新买。星耀午后主要用于修工作台、保留研究缓存、盘后复盘和明日动作卡，不把期权研究误放成盘中买入信号。</div>'
+        + "<h3>ETF持仓提醒</h3>"
+        + (source_grid(alert_cards, "wide") if alert_cards else '<div class="empty">暂无ETF提醒。</div>')
+        + "<h3>A股观察提醒</h3>"
+        + (source_grid(watch_cards) if watch_cards else '<div class="empty">暂无A股异动提醒。</div>')
+    )
+    return section("星耀盘中研究", "A股/ETF优先；期权只做研究和风控", body, "xingyao-research")
 
 
 def build_action_cards(report: dict, broker: dict, post_close: dict | None = None) -> str:
@@ -1117,8 +1398,36 @@ def build_etf_radar(report: dict) -> str:
     return section("ETF雷达", "完整展开，但只保留可执行纪律", source_grid(rows), "etf")
 
 
-def build_options(report: dict, xingyao: dict, yuheng: dict) -> str:
+def build_options(report: dict, xingyao: dict, yuheng: dict, option_chain: dict, option_surface: dict, research_manifest: dict) -> str:
     option = report.get("option_sim_radar") or {}
+    chain_rows = option_chain.get("rows") or []
+    chain_summary = option_chain.get("summary") or []
+    term_structure = option_surface.get("term_structure") or []
+    skew_summary = option_surface.get("skew_summary") or []
+    manifest_paths = (research_manifest.get("paths") or {}) if isinstance(research_manifest, dict) else {}
+    real_cards = []
+    for row in chain_rows[:12]:
+        greek_line = (
+            f"IV {pct_from_ratio(row.get('implied_volatility'))} | "
+            f"Delta {fmt_number(row.get('delta'), 3)} | "
+            f"Gamma {fmt_number(row.get('gamma'), 4)} | "
+            f"Theta/日 {fmt_number(row.get('theta_per_day'), 4)} | "
+            f"Vega {fmt_number(row.get('vega_per_1pct_vol'), 4)}"
+        )
+        quote_line = (
+            f"中间价 {fmt_price(row.get('mark_price'))} ({row.get('mark_source') or '-'}) | "
+            f"买一/卖一 {fmt_price(row.get('bid_price1'))}/{fmt_price(row.get('ask_price1'))} | "
+            f"OI {fmt_number(row.get('open_interest'), 0)} | 成交量 {fmt_number(row.get('volume'), 0)}"
+        )
+        real_cards.append(
+            source_card(
+                f"{row.get('underlying_code')} {row.get('direction_cn')} {fmt_price(row.get('strike'))}",
+                f"真实链 | 到期 {row.get('expiry_date') or '-'} | {row.get('option_code') or '-'}",
+                quote_line,
+                f"{greek_line}；标的 {fmt_price(row.get('underlying_price'))}；虚值/实值 {pct(row.get('moneyness_pct'))}",
+                "ok" if row.get("implied_volatility") else "warn",
+            )
+        )
     rows = []
     for item in option.get("results") or []:
         code = item.get("code") or "-"
@@ -1146,7 +1455,17 @@ def build_options(report: dict, xingyao: dict, yuheng: dict) -> str:
         )
     matched = sum(1 for item in option.get("results") or [] if item.get("xingyao_contract_code"))
     total = len(option.get("results") or [])
-    status = f"星耀基础合约 {((xingyao.get('option_basic') or {}).get('contract_count') or 0)}；本页匹配 {matched}/{total}；玉衡 {yuheng.get('status') or '-'}；仍无真实权利金/IV/Greeks/OI。"
+    if chain_rows:
+        real_status = f"真实期权链 {len(chain_rows)} 条；摘要 {len(chain_summary)} 组；"
+    else:
+        real_status = "真实期权链未生成；"
+    surface_status = f"曲面 {len(term_structure)} 个期限组 / {len(skew_summary)} 个偏斜组；" if term_structure or skew_summary else "曲面未生成；"
+    store_status = (
+        f"研究库 快照 {research_manifest.get('snapshot_rows') or 0} / min1 {research_manifest.get('kline_min1_rows') or 0} / day {research_manifest.get('kline_day_rows') or 0} / 期权 {research_manifest.get('option_chain_rows') or 0}。"
+        if research_manifest
+        else "研究库存储未生成。"
+    )
+    status = f"星耀基础合约 {((xingyao.get('option_basic') or {}).get('contract_count') or 0)}；本页匹配 {matched}/{total}；{real_status}{surface_status}玉衡 {yuheng.get('status') or '-'}；{store_status}"
     note = """
     <div class="decision-note">
       <strong>为什么之前显示 None / 0 / 未匹配：</strong>
@@ -1155,7 +1474,64 @@ def build_options(report: dict, xingyao: dict, yuheng: dict) -> str:
       另外 512100 在当前星耀基础合约缓存里没有合约记录，所以它会保留为“未匹配”，不能用于星耀合约训练。
     </div>
     """
-    return section("期权仿真", status, note + source_grid(rows), "options")
+    if chain_summary:
+        summary_cards = []
+        for item in chain_summary[:8]:
+            summary_cards.append(
+                source_card(
+                    f"{item.get('underlying_code')} {item.get('underlying_name') or ''}",
+                    f"到期 {item.get('expiry_date') or '-'} | 合约 {item.get('contracts') or 0}",
+                    f"PCR OI {fmt_number(item.get('put_call_oi_ratio'), 2)} | PCR Vol {fmt_number(item.get('put_call_volume_ratio'), 2)}",
+                    f"ATM跨式 {fmt_price(item.get('atm_straddle_mid'))}；隐含波动幅度 {pct(item.get('atm_implied_move_pct'))}；沽减购IV偏斜 {pct(item.get('atm_put_minus_call_iv_pct'))}",
+                    "ok",
+                )
+            )
+        note += "<h3>真实期权链摘要</h3>" + source_grid(summary_cards)
+    if term_structure:
+        surface_cards = []
+        for item in term_structure[:8]:
+            surface_cards.append(
+                source_card(
+                    f"{item.get('underlying_code')} {item.get('underlying_name') or ''}",
+                    f"期限结构 | 近端 {item.get('near_expiry') or '-'} -> 远端 {item.get('far_expiry') or '-'}",
+                    f"ATM IV {pct_from_ratio(item.get('near_atm_iv'))} -> {pct_from_ratio(item.get('far_atm_iv'))}",
+                    f"斜率 {fmt_number(item.get('term_slope_pct_per_day'), 4)} pct/天；近端跨式 {fmt_price(item.get('near_atm_straddle'))}；远端跨式 {fmt_price(item.get('far_atm_straddle'))}",
+                    "ok",
+                )
+            )
+        note += "<h3>期限结构</h3>" + source_grid(surface_cards)
+    if skew_summary:
+        skew_cards = []
+        for item in skew_summary[:8]:
+            skew_cards.append(
+                source_card(
+                    f"{item.get('underlying_code')} {item.get('underlying_name') or ''}",
+                    f"波动率偏斜 | 到期 {item.get('expiry_date') or '-'}",
+                    f"25Δ 风险逆转 {pct(item.get('risk_reversal_25d_pct'))} | Butterfly {pct(item.get('butterfly_25d_pct'))}",
+                    f"ATM Call/Put IV {pct_from_ratio(item.get('atm_call_iv'))}/{pct_from_ratio(item.get('atm_put_iv'))}；近25Δ Call/Put {pct_from_ratio(item.get('call_25d_iv'))}/{pct_from_ratio(item.get('put_25d_iv'))}",
+                    "ok" if item.get("risk_reversal_25d_pct") not in (None, "") else "warn",
+                )
+            )
+        note += "<h3>偏斜结构</h3>" + source_grid(skew_cards)
+    if real_cards:
+        note += "<h3>真实期权链样本</h3>" + source_grid(real_cards)
+    if research_manifest:
+        note += (
+            "<h3>研究库存储</h3>"
+            + source_grid(
+                [
+                    source_card(
+                        "本地研究库",
+                        f"生成时间 {research_manifest.get('generated_at') or '-'}",
+                        f"快照 {research_manifest.get('snapshot_rows') or 0}；min1 {research_manifest.get('kline_min1_rows') or 0}；day {research_manifest.get('kline_day_rows') or 0}；期权 {research_manifest.get('option_chain_rows') or 0}",
+                        f"SQLite {manifest_paths.get('sqlite') or '-'}；快照文件 {manifest_paths.get('snapshot') or '-'}",
+                        "ok",
+                    )
+                ]
+            )
+        )
+    note += "<h3>仿真视角</h3>"
+    return section("期权仿真与真实链", status, note + source_grid(rows), "options")
 
 
 def build_ai_summary(report: dict) -> str:
@@ -1354,7 +1730,7 @@ def build_daily_maintenance_records() -> str:
 
 def build_html() -> str:
     report = read_json(REPORT)
-    broker = read_json(BROKER)
+    broker = read_broker_snapshot()
     journal = read_csv(JOURNAL)
     eastmoney = read_json(EASTMONEY_PROBE)
     ifind_probe = read_json(IFIND_PROBE)
@@ -1362,6 +1738,10 @@ def build_html() -> str:
     clean_radar = read_json(latest_ifind_clean_radar_path())
     ifind_usage = read_json(IFIND_USAGE)
     xingyao = read_json(XINGYAO)
+    option_chain = read_json(OPTION_CHAIN)
+    option_surface = read_json(OPTION_SURFACE)
+    research_manifest = read_json(XINGYAO_STORE_MANIFEST)
+    xingyao_alerts = read_json(XINGYAO_INTRADAY_ALERTS)
     yuheng = read_json(YUHENG)
     backtest = read_json(latest_backtest_path())
     post_close = read_json(POST_CLOSE)
@@ -1370,28 +1750,18 @@ def build_html() -> str:
     title = meta.get("subject") or "本地交易工作台"
     html_body = f"""
     {build_top_sync(report, broker, ifind_probe, ifind_sample, clean_radar)}
-    {build_ifind_clean_panel(clean_radar, backtest)}
-    {build_execution_panel(report, broker, eastmoney, ifind_probe, ifind_sample, xingyao, profit_targets)}
-    {build_holdings_table(broker)}
-    {build_action_cards(report, broker, post_close)}
-    {build_tactical_cash(report)}
-    {build_post_close_snapshot(post_close)}
-    {build_pnl_reconciliation(report, broker, journal)}
-    {build_tomorrow_plan(broker, backtest)}
-    {build_interface_row(report, broker, eastmoney, ifind_probe, ifind_sample, xingyao, yuheng)}
-    {build_backtest_panel(backtest)}
-    {build_ifind_use_plan(ifind_usage, ifind_probe)}
-    {build_data_upgrade_plan(report, ifind_probe, xingyao, yuheng)}
-    {build_toolchain_status(post_close)}
-    {build_showcase_notes()}
-    {build_research_skill_plan()}
+    {build_new_entry_gate(report)}
+    {build_intraday_brief(report, broker, clean_radar, option_chain)}
     {build_market_structure(report)}
     {build_etf_radar(report)}
-    {build_options(report, xingyao, yuheng)}
-    {build_ai_summary(report)}
-    {build_journal(journal)}
+    {build_action_cards(report, broker, post_close)}
+    {build_xingyao_intraday_panel(xingyao_alerts, research_manifest)}
+    {build_tactical_cash(report)}
+    {build_holdings_table(broker)}
+    {build_ifind_clean_panel(clean_radar, backtest)}
+    {build_interface_row(report, broker, eastmoney, ifind_probe, ifind_sample, xingyao, yuheng)}
+    {build_options(report, xingyao, yuheng, option_chain, option_surface, research_manifest)}
     {build_daily_maintenance_records()}
-    {build_learning_preview(report, broker, journal, backtest)}
     <footer>数据文件：{esc(REPORT)} / {esc(REPORT_MD)} / {esc(JOURNAL)}。本页仅用于本地模拟、纪律提醒和复盘，不连接真实券商、不自动下单。</footer>
     """
     return f"""<!doctype html>
@@ -1404,21 +1774,18 @@ def build_html() -> str:
 </head>
 <body>
   <nav>
-    <strong>iFind A股盘中工作台</strong>
-    <a href="#clean-radar">清洁雷达</a>
-    <a href="#execution">执行</a>
-    <a href="#holdings">持仓</a>
+    <strong>星耀A股工作台</strong>
+    <a href="#intraday">盘中主屏</a>
+    <a href="#structure">市场结构</a>
+    <a href="#etf">ETF</a>
     <a href="#cards">动作卡</a>
-    <a href="#post-close">收盘</a>
-    <a href="#pnl">对账</a>
-    <a href="#tomorrow">计划</a>
+    <a href="#xingyao-research">星耀研究</a>
+    <a href="#tactical-cash">现金调度</a>
+    <a href="#holdings">持仓</a>
+    <a href="#clean-radar">清洁雷达</a>
     <a href="#interfaces">接口</a>
-    <a href="#backtest">回测</a>
-    <a href="#ifind">iFind</a>
-    <a href="#data-upgrade">升级</a>
-    <a href="#showcase">会场</a>
+    <a href="#options">期权研究</a>
     <a href="#maintenance">维护</a>
-    <a href="#toolchain">工具链</a>
   </nav>
   <main>{html_body}</main>
   <script>{script()}</script>
@@ -1547,7 +1914,7 @@ def script() -> str:
 def refresh_status() -> dict:
     global REFRESH_PROCESS
     running = REFRESH_PROCESS is not None and REFRESH_PROCESS.poll() is None
-    snap = latest_snapshot(read_json(BROKER))
+    snap = latest_snapshot(read_broker_snapshot())
     return {
         "refresh_running": running,
         "refresh_started_at": REFRESH_STARTED_AT,
@@ -1558,6 +1925,10 @@ def refresh_status() -> dict:
         "ifind_probe_mtime": file_time(IFIND_PROBE),
         "ifind_sample_mtime": file_time(latest_ifind_sample_path()),
         "xingyao_probe_mtime": file_time(XINGYAO),
+        "option_chain_mtime": file_time(OPTION_CHAIN),
+        "option_surface_mtime": file_time(OPTION_SURFACE),
+        "xingyao_store_manifest_mtime": file_time(XINGYAO_STORE_MANIFEST),
+        "xingyao_intraday_alerts_mtime": file_time(XINGYAO_INTRADAY_ALERTS),
         "yuheng_probe_mtime": file_time(YUHENG),
     }
 
@@ -1575,6 +1946,11 @@ def start_refresh() -> dict:
             "('ifind quick20 before',[sys.executable,'tools/ifind_http_probe.py','--quick20'],90),"
             "('yuheng probe',[sys.executable,'tools/yuheng_probe.py'],60),"
             "('xingyao probe',[sys.executable,'tools/xingyao_data_probe.py'],60),"
+            "('xingyao option chain',[sys.executable,'tools/xingyao_option_analytics.py','--expiry-limit','2','--strikes-each-side','2'],150),"
+            "('xingyao option surface',[sys.executable,'tools/xingyao_option_surface.py'],60),"
+            "('xingyao research store',[sys.executable,'tools/xingyao_research_store.py','--fetch-timeout','20'],90),"
+            "('xingyao store query',[sys.executable,'tools/xingyao_duck_query.py','--table','option_chain_latest','--code','510300','--limit','8'],60),"
+            "('xingyao intraday alerts',[sys.executable,'tools/xingyao_intraday_alerts.py'],60),"
             "('ifind clean radar',[sys.executable,'tools/ifind_clean_radar.py'],180),"
             "('ifind full probe',[sys.executable,'tools/ifind_http_probe.py','--all','--wencai'],180)"
             "]; "

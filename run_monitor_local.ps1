@@ -44,6 +44,14 @@ try {
     $python = (Get-Command python -ErrorAction Stop).Source
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Python: $python" | Out-File -FilePath $logFile -Encoding utf8 -Append
 
+    & $python .\tools\a_stock_radar_snapshot.py 2>&1 | ForEach-Object {
+        $_.ToString() | Out-File -FilePath $logFile -Encoding utf8 -Append
+    }
+    $aStockExitCode = $LASTEXITCODE
+    if ($aStockExitCode -ne 0) {
+        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] A-share route snapshot failed ($aStockExitCode); monitor will continue with new entries blocked." | Out-File -FilePath $logFile -Encoding utf8 -Append
+    }
+
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & $python monitor.py 2>&1 | ForEach-Object {

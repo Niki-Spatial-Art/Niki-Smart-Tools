@@ -26,6 +26,7 @@ import pytz
 import requests
 
 from ai_client import generate_ai_summary
+from connectors import xingyao as xingyao_connector
 from emailer import EmailNotifier
 
 
@@ -79,6 +80,8 @@ DIGITAL_INFRA_FILE = os.getenv("DIGITAL_INFRA_FILE", "digital_infra_watchlist.js
 IFIND_HTTP_PROBE_PATH = os.getenv("IFIND_HTTP_PROBE_PATH", "data/latest_ifind_http_probe.json")
 PAPER_TRADE_JOURNAL_PATH = os.getenv("PAPER_TRADE_JOURNAL_PATH", "data/paper_trade_journal.csv")
 EXECUTION_EVENTS_PATH = os.getenv("EXECUTION_EVENTS_PATH", "data/execution_events.json")
+BROKER_SNAPSHOT_FILE = os.getenv("BROKER_SNAPSHOT_FILE", "data/broker_account_snapshots.local.json")
+A_STOCK_RADAR_SNAPSHOT_PATH = os.getenv("A_STOCK_RADAR_SNAPSHOT_PATH", "data/a_stock_radar_snapshot.json")
 
 
 def env_enabled(name: str, default: str = "false") -> bool:
@@ -120,6 +123,19 @@ def windpy_client():
 def load_json_file(path: str | Path) -> Dict:
     with open(path, "r", encoding="utf-8-sig") as file:
         return json.load(file)
+
+
+def json_default(value):
+    """Keep a diagnostic payload serializable without silently dropping its evidence."""
+    if isinstance(value, (datetime, Path)):
+        return str(value)
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict(orient="records")
+        except TypeError:
+            return to_dict()
+    return str(value)
 
 
 def load_csv_rows(path: str | Path) -> List[Dict[str, str]]:
@@ -180,6 +196,37 @@ def first_float(row: Dict, *keys: str, scale: float = 1.0) -> Optional[float]:
             if value is not None:
                 return value
     return None
+
+
+def positive_float(row: Dict, *keys: str) -> Optional[float]:
+    for key in keys:
+        value = safe_float(row.get(key))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
+def xingyao_effective_price(row: Dict) -> tuple[Optional[float], str]:
+    traded = positive_float(row, "last_price", "LAST_PRICE", "last", "price", "close_price", "CLOSE_PRICE", "close")
+    if traded is not None:
+        return traded, "last"
+
+    bid = positive_float(row, "bid_price1", "BID_PRICE1", "bid1", "bid")
+    ask = positive_float(row, "ask_price1", "ASK_PRICE1", "ask1", "ask")
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2, "bid_ask_mid"
+    if ask is not None:
+        return ask, "ask1"
+    if bid is not None:
+        return bid, "bid1"
+
+    iopv = positive_float(row, "iopv", "IOPV")
+    if iopv is not None:
+        return iopv, "iopv_reference"
+    pre_close = positive_float(row, "pre_close_price", "PRE_CLOSE_PRICE", "pre_close", "prev_close", "preclose")
+    if pre_close is not None:
+        return pre_close, "pre_close_reference"
+    return None, "missing"
 
 
 def eastmoney_price_float(code: str, value) -> Optional[float]:
@@ -356,15 +403,7 @@ def quote_from_xingyao_row(code: str, row: Dict) -> Quote:
         or row.get("Name")
         or code
     )
-    price = first_float(
-        row,
-        "last_price",
-        "LAST_PRICE",
-        "close_price",
-        "CLOSE_PRICE",
-        "last",
-        "price",
-    )
+    price, _price_source = xingyao_effective_price(row)
     pre_close = first_float(row, "pre_close_price", "PRE_CLOSE_PRICE", "pre_close", "prev_close", "preclose")
     pct_change = first_float(row, "pct_change", "PCT_CHANGE", "change_rate")
     if pct_change is None and price is not None and pre_close:
@@ -430,13 +469,41 @@ def fetch_quote_wind(code: str) -> Quote:
     )
 
 
+def fetch_quote_local_a_stock_snapshot(code: str) -> Quote:
+    """Use the audited local route snapshot before making another network request."""
+    payload, error = load_optional_json(A_STOCK_RADAR_SNAPSHOT_PATH)
+    if error:
+        raise RuntimeError(error)
+    generated_at = parse_snapshot_time(payload.get("generated_at"))
+    if generated_at is None:
+        raise RuntimeError("snapshot has no valid generated_at")
+    max_age = int(os.getenv("A_STOCK_SNAPSHOT_MAX_AGE_MINUTES", "20"))
+    age_minutes = (datetime.now(BEIJING_TZ) - generated_at).total_seconds() / 60
+    if age_minutes < -5 or age_minutes > max_age:
+        raise RuntimeError(f"snapshot is {age_minutes:.0f} minutes old")
+    quote = (payload.get("quotes") or {}).get(code) or {}
+    price = safe_float(quote.get("price"))
+    if price is None:
+        raise RuntimeError("snapshot quote is missing price")
+    return Quote(
+        code=code,
+        name=str(quote.get("name") or code),
+        price=price,
+        pct_change=safe_float(quote.get("change_pct")),
+        amount=safe_float(quote.get("amount")),
+        ma20=safe_float(quote.get("ma20")),
+        ma60=safe_float(quote.get("ma60")),
+    )
+
+
 def fetch_quote(code: str) -> Quote:
     sources = [
+        ("local_a_stock_snapshot", fetch_quote_local_a_stock_snapshot),
         ("xingyao", fetch_quote_xingyao),
         ("wind", fetch_quote_wind),
-        ("eastmoney", fetch_quote_eastmoney),
         ("tencent", fetch_quote_tencent),
         ("sina", fetch_quote_sina),
+        ("eastmoney", fetch_quote_eastmoney),
         ("yahoo", fetch_quote_yahoo),
     ]
     errors = []
@@ -526,19 +593,11 @@ def option_time_risk(days_to_expiry: int, premium: float) -> str:
 
 
 def xingyao_sdk_paths() -> List[str]:
-    raw = os.getenv("XINGYAO_SDK_PATHS", "")
-    paths = [item.strip() for item in raw.split(os.pathsep) if item.strip()]
-    sdk_root = os.getenv("XINGYAO_SDK_ROOT", "").strip()
-    if sdk_root:
-        root = Path(sdk_root).expanduser()
-        paths.extend([str(root / "amazingdata_sdk"), str(root / "xingyao_sdk")])
-    return paths
+    return xingyao_connector.sdk_paths()
 
 
 def add_xingyao_sdk_paths() -> None:
-    for sdk_path in xingyao_sdk_paths():
-        if sdk_path and os.path.exists(sdk_path) and sdk_path not in sys.path:
-            sys.path.insert(0, sdk_path)
+    xingyao_connector.add_sdk_paths()
 
 
 def xingyao_cache_path() -> Path:
@@ -618,6 +677,13 @@ def xingyao_login():
         raise RuntimeError("missing credentials")
     add_xingyao_sdk_paths()
     import AmazingData as ad  # type: ignore
+    missing = [name for name in ("login", "logout", "BaseData", "InfoData", "MarketData") if not hasattr(ad, name)]
+    if missing:
+        raise RuntimeError(
+            "AmazingData package is incomplete for the manual API; "
+            f"missing: {', '.join(missing)}. "
+            "Ask Xingyao support for the complete AmazingData wheel, or use the TGW adapter."
+        )
 
     host = os.getenv("XINGYAO_HOST", "101.230.159.234")
     port = int(os.getenv("XINGYAO_PORT", "8600"))
@@ -691,35 +757,7 @@ def xingyao_market_code(code: str) -> str:
 
 def fetch_xingyao_snapshot_rows(codes: List[str]) -> Dict:
     """Read AmazingData market snapshots for ETF/A-share codes when permissions allow it."""
-    if not codes:
-        return {"enabled": False, "source": "xingyao_snapshot", "rows": [], "error": "empty codes"}
-    try:
-        ad = xingyao_login()
-    except Exception as exc:
-        return {"enabled": False, "source": "xingyao_snapshot", "rows": [], "error": str(exc)}
-
-    try:
-        base = ad.BaseData()
-        calendar = xingyao_calendar(base)
-        market = ad.MarketData(calendar)
-        today = int(datetime.now(BEIJING_TZ).strftime("%Y%m%d"))
-        sdk_codes = [xingyao_market_code(code) for code in codes]
-        rows = market.query_snapshot(sdk_codes, today, today)
-        records = xingyao_market_result_to_rows(rows, latest_only=True)
-        return {
-            "enabled": bool(records),
-            "source": "xingyao_snapshot",
-            "requested": sdk_codes,
-            "calendar_len": len(calendar),
-            "row_count": len(records),
-            "rows": records,
-            "error": "" if records else "empty snapshot",
-        }
-    except Exception as exc:
-        return {"enabled": False, "source": "xingyao_snapshot", "rows": [], "error": str(exc)}
-    finally:
-        with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            ad.logout()
+    return xingyao_connector.fetch_snapshot_rows(codes)
 
 
 def fetch_xingyao_kline_probe(codes: List[str]) -> Dict:
@@ -736,89 +774,12 @@ def fetch_xingyao_kline_rows(
 
     period uses AmazingData constant names such as day/min1/min5.
     """
-    try:
-        ad = xingyao_login()
-    except Exception as exc:
-        return {"enabled": False, "source": "xingyao_kline", "rows": [], "error": str(exc)}
-
-    try:
-        base = ad.BaseData()
-        calendar = xingyao_calendar(base)
-        market = ad.MarketData(calendar)
-        today = int(datetime.now(BEIJING_TZ).strftime("%Y%m%d"))
-        begin = int((datetime.now(BEIJING_TZ) - timedelta(days=days)).strftime("%Y%m%d"))
-        sdk_codes = [xingyao_market_code(code) for code in codes]
-        query = getattr(market, "query_kline", None)
-        if query is None:
-            return {"enabled": False, "source": "xingyao_kline", "rows": [], "error": "AmazingData MarketData has no query_kline"}
-        period_obj = getattr(getattr(ad, "constant", None), "Period", None)
-        period_value = getattr(getattr(period_obj, period, None), "value", None)
-        if period_value is None:
-            raise RuntimeError(f"unsupported AmazingData period: {period}")
-        rows = query(sdk_codes, begin, today, period=period_value)
-        records = xingyao_market_result_to_rows(rows, max_rows)
-        return {
-            "enabled": bool(records),
-            "source": "xingyao_kline",
-            "requested": sdk_codes,
-            "begin_date": begin,
-            "end_date": today,
-            "period": period,
-            "calendar_len": len(calendar),
-            "row_count": len(records),
-            "rows": records,
-            "error": "" if records else "empty kline",
-        }
-    except Exception as exc:
-        return {"enabled": False, "source": "xingyao_kline", "rows": [], "error": str(exc)}
-    finally:
-        with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            ad.logout()
+    return xingyao_connector.fetch_kline_rows(codes, days=days, max_rows=max_rows, period=period)
 
 
 def xingyao_sdk_capabilities() -> Dict:
-    add_xingyao_sdk_paths()
-    capabilities = {
-        "sdk_paths": [path for path in xingyao_sdk_paths() if path],
-        "amazingdata_import": False,
-        "tgw_import": False,
-        "amazingdata_methods": {},
-        "tgw_methods": [],
-        "sdk_error": "",
-    }
-    try:
-        import AmazingData as ad  # type: ignore
-
-        capabilities["amazingdata_import"] = True
-        for class_name in ("BaseData", "InfoData", "MarketData"):
-            cls = getattr(ad, class_name, None)
-            capabilities["amazingdata_methods"][class_name] = [
-                item for item in dir(cls) if cls is not None and not item.startswith("_")
-            ]
-    except Exception as exc:
-        capabilities["sdk_error"] = f"AmazingData import failed: {exc}"
-
-    try:
-        from tgw import interface as tgw_interface  # type: ignore
-
-        capabilities["tgw_import"] = True
-        capabilities["tgw_methods"] = [
-            item
-            for item in (
-                "QuerySnapshot",
-                "QueryKline",
-                "QuerySecuritiesInfo",
-                "QueryETFInfo",
-                "Subscribe",
-            )
-            if hasattr(tgw_interface, item)
-        ]
-    except Exception as exc:
-        if capabilities["sdk_error"]:
-            capabilities["sdk_error"] += f"; TGW import failed: {exc}"
-        else:
-            capabilities["sdk_error"] = f"TGW import failed: {exc}"
-
+    capabilities = xingyao_connector.diagnose_sdk()
+    capabilities.setdefault("amazingdata_methods", {})
     return capabilities
 
 
@@ -1657,6 +1618,136 @@ def load_portfolio() -> Dict:
     return data
 
 
+def load_optional_json(path: str | Path) -> tuple[Dict, str]:
+    """Return a local runtime JSON payload without making a broken file look valid."""
+    source = Path(path)
+    if not source.exists():
+        return {}, f"missing: {source}"
+    try:
+        payload = load_json_file(source)
+    except (OSError, json.JSONDecodeError) as exc:
+        return {}, f"invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, "invalid: root must be an object"
+    return payload, ""
+
+
+def parse_snapshot_time(value) -> Optional[datetime]:
+    if not value:
+        return None
+    text = str(value).strip()
+    for parser in (
+        lambda: datetime.fromisoformat(text.replace("Z", "+00:00")),
+        lambda: datetime.strptime(text, "%Y-%m-%d %H:%M:%S"),
+    ):
+        try:
+            parsed = parser()
+            if parsed.tzinfo is None:
+                return BEIJING_TZ.localize(parsed)
+            return parsed.astimezone(BEIJING_TZ)
+        except ValueError:
+            continue
+    return None
+
+
+def latest_broker_snapshot(payload: Dict) -> Dict:
+    snapshots = payload.get("snapshots") or []
+    if not isinstance(snapshots, list) or not snapshots:
+        return payload if payload.get("snapshot_time") else {}
+    return max(
+        (item for item in snapshots if isinstance(item, dict)),
+        key=lambda item: parse_snapshot_time(item.get("snapshot_time")) or datetime.min.replace(tzinfo=BEIJING_TZ),
+        default={},
+    )
+
+
+def broker_snapshot_gate(portfolio: Dict, now: Optional[datetime] = None) -> Dict:
+    """New entries require a current, parseable local broker snapshot, never defaults."""
+    now = now or datetime.now(BEIJING_TZ)
+    if Path(PORTFOLIO_FILE).name == "portfolio.example.json":
+        return {"blocked": True, "level": "PORTFOLIO_DEFAULT", "reason": "Default portfolio config is active; new entries are disabled."}
+
+    payload, error = load_optional_json(BROKER_SNAPSHOT_FILE)
+    if error:
+        return {"blocked": True, "level": "BROKER_SNAPSHOT_UNAVAILABLE", "reason": f"Broker snapshot unavailable: {error}"}
+    snapshot = latest_broker_snapshot(payload)
+    snapshot_time = parse_snapshot_time(snapshot.get("snapshot_time"))
+    if snapshot_time is None:
+        return {"blocked": True, "level": "BROKER_SNAPSHOT_INVALID", "reason": "Broker snapshot has no valid snapshot_time."}
+    age_minutes = (now - snapshot_time).total_seconds() / 60
+    max_age = int(os.getenv("BROKER_SNAPSHOT_MAX_AGE_MINUTES", "90"))
+    positions = [item for item in (snapshot.get("positions_visible") or []) if isinstance(item, dict)]
+    if age_minutes < -5 or age_minutes > max_age:
+        return {
+            "blocked": True,
+            "level": "BROKER_SNAPSHOT_STALE",
+            "reason": f"Broker snapshot is {age_minutes:.0f} minutes old; new entries require a snapshot within {max_age} minutes.",
+            "snapshot_time": snapshot_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "age_minutes": round(age_minutes, 1),
+        }
+    if not positions or safe_float(snapshot.get("total_assets")) is None:
+        return {"blocked": True, "level": "BROKER_SNAPSHOT_INCOMPLETE", "reason": "Broker snapshot is missing account totals or visible positions."}
+    return {
+        "blocked": False,
+        "level": "OK",
+        "reason": "Current broker snapshot is available for a human-reviewed decision.",
+        "snapshot_time": snapshot_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "age_minutes": round(age_minutes, 1),
+        "visible_position_count": len(positions),
+    }
+
+
+def a_stock_data_gate(portfolio: Dict, now: Optional[datetime] = None) -> Dict:
+    """Require the local Tencent/TDX/Tencent-qfq/AKShare snapshot before new entries."""
+    now = now or datetime.now(BEIJING_TZ)
+    payload, error = load_optional_json(A_STOCK_RADAR_SNAPSHOT_PATH)
+    if error:
+        return {"blocked": True, "level": "MARKET_DATA_UNAVAILABLE", "reason": f"A-share route snapshot unavailable: {error}"}
+    generated_at = parse_snapshot_time(payload.get("generated_at"))
+    if generated_at is None:
+        return {"blocked": True, "level": "MARKET_DATA_INVALID", "reason": "A-share route snapshot has no valid generated_at."}
+    age_minutes = (now - generated_at).total_seconds() / 60
+    max_age = int(os.getenv("A_STOCK_SNAPSHOT_MAX_AGE_MINUTES", "20"))
+    status = payload.get("status") or {}
+    requested = set(str(code) for code in (payload.get("requested_codes") or []))
+    configured_codes = set(watched_codes_from_portfolio(portfolio))
+    configured_codes.update(str(code) for code in (portfolio.get("watchlist") or []))
+    quote_coverage = safe_float(status.get("quote_coverage_pct")) or 0
+    history_coverage = safe_float(status.get("history_coverage_pct")) or 0
+    if age_minutes < -5 or age_minutes > max_age:
+        return {"blocked": True, "level": "MARKET_DATA_STALE", "reason": f"A-share route snapshot is {age_minutes:.0f} minutes old; refresh before any new entry.", "age_minutes": round(age_minutes, 1)}
+    if not configured_codes.issubset(requested):
+        return {"blocked": True, "level": "MARKET_DATA_SCOPE", "reason": "A-share route snapshot does not cover every configured position/watchlist code."}
+    if quote_coverage < 100 or history_coverage < 80:
+        return {"blocked": True, "level": "MARKET_DATA_INCOMPLETE", "reason": f"A-share route coverage is quote {quote_coverage:.0f}% / history {history_coverage:.0f}%.", "quote_coverage_pct": quote_coverage, "history_coverage_pct": history_coverage}
+    return {
+        "blocked": False,
+        "level": "OK",
+        "reason": "Tencent quote and daily-bar route passed its freshness and coverage checks.",
+        "generated_at": generated_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "age_minutes": round(age_minutes, 1),
+        "quote_coverage_pct": quote_coverage,
+        "history_coverage_pct": history_coverage,
+        "route": payload.get("route") or [],
+    }
+
+
+def new_entry_gate(report: Dict) -> Dict:
+    portfolio = report.get("portfolio") or {}
+    gates = [
+        broad_market_coverage_gate(report),
+        broker_snapshot_gate(portfolio),
+        a_stock_data_gate(portfolio),
+    ]
+    blocked = [gate for gate in gates if gate.get("blocked")]
+    return {
+        "blocked": bool(blocked),
+        "level": blocked[0].get("level") if blocked else "OK",
+        "reason": blocked[0].get("reason") if blocked else "All new-entry data gates passed.",
+        "gates": gates,
+    }
+
+
 def load_digital_infra_watchlist() -> Dict:
     try:
         return load_json_file(DIGITAL_INFRA_FILE)
@@ -2212,7 +2303,7 @@ def tactical_cash_decision(report: Dict, stock_cards: Optional[List[Dict]] = Non
         "level": "DISABLED",
         "reason": "短线试运行未启用",
     }
-    coverage_gate = broad_market_coverage_gate(report)
+    coverage_gate = new_entry_gate(report)
     stock_cards = stock_cards if stock_cards is not None else short_term_action_cards(report)
     actionable = [
         item
@@ -2667,7 +2758,7 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
     )
     risk_gate = daily_risk_gate(portfolio, pilot) if pilot else {"blocked": True, "level": "DISABLED", "reason": "短线试运行未启用"}
     stop_gate = stop_new_entries_gate(report, pilot) if pilot else {"blocked": False, "failed_count_today": 0, "failure_limit": 2, "reason": "未启用"}
-    coverage_gate = broad_market_coverage_gate(report)
+    coverage_gate = new_entry_gate(report)
     cards = []
 
     for item in tiers.get("actionable", []):
@@ -2773,7 +2864,8 @@ def short_term_action_cards(report: Dict) -> List[Dict]:
                 "decision_card": decision_card,
                 "risk_gate": risk_gate,
                 "stop_new_entries_gate": stop_gate,
-                "data_coverage_gate": coverage_gate,
+                "new_entry_gate": coverage_gate,
+                "data_coverage_gate": broad_market_coverage_gate(report),
                 "risk_per_trade_pct": turtle_sizing.get("risk_per_trade_pct"),
                 "risk_per_trade_amount": turtle_sizing.get("risk_per_trade_amount"),
                 "risk_per_share": turtle_sizing.get("risk_per_share"),
@@ -2827,7 +2919,7 @@ def action_plan_markdown_lines(report: Dict) -> List[str]:
     option_radar = report.get("option_sim_radar", {})
     option_cards = option_beginner_cards(option_radar)
     option_do_cards = [item for item in option_cards if item["decision"] == "只仿真"]
-    coverage_gate = broad_market_coverage_gate(report)
+    coverage_gate = new_entry_gate(report)
     cash_decision = tactical_cash_decision(report, stock_cards)
 
     lines = ["", "## 今日动作卡", ""]
@@ -2915,6 +3007,9 @@ def build_action_stack(report: Dict) -> Dict:
         "stop_new_entries_gate": stop_gate,
         "tactical_cash_decision": cash_decision,
         "data_coverage_gate": broad_market_coverage_gate(report),
+        "new_entry_gate": new_entry_gate(report),
+        "broker_snapshot_gate": broker_snapshot_gate(portfolio),
+        "a_stock_data_gate": a_stock_data_gate(portfolio),
         "short_term_cards": stock_cards,
         "option_cards": option_cards,
         "xingyao_status": xingyao_status_text(option_radar),
@@ -2943,7 +3038,7 @@ def action_plan_html(report: Dict) -> str:
     option_cards = option_beginner_cards(option_radar)
     do_cards = [item for item in stock_cards if item["decision"] == "做"]
     option_do_cards = [item for item in option_cards if item["decision"] == "只仿真"]
-    coverage_gate = broad_market_coverage_gate(report)
+    coverage_gate = new_entry_gate(report)
     cash_decision = tactical_cash_decision(report, stock_cards)
 
     if do_cards:
@@ -3223,6 +3318,15 @@ def run_radar() -> Dict:
     option_sim_radar = run_option_sim_radar()
     xingyao_data_status = run_xingyao_data_diagnostics(option_sim_radar)
     coverage = coverage_report(watchlist, stock_radar, broad_market_scan, option_sim_radar, xingyao_data_status)
+    a_stock_snapshot, a_stock_snapshot_error = load_optional_json(A_STOCK_RADAR_SNAPSHOT_PATH)
+    a_stock_data_status = {
+        "path": A_STOCK_RADAR_SNAPSHOT_PATH,
+        "available": not bool(a_stock_snapshot_error),
+        "error": a_stock_snapshot_error,
+        "generated_at": a_stock_snapshot.get("generated_at"),
+        "route": a_stock_snapshot.get("route") or [],
+        "status": a_stock_snapshot.get("status") or {},
+    }
 
     report = {
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -3237,6 +3341,7 @@ def run_radar() -> Dict:
         "market_structure_policy": market_policy,
         "option_sim_radar": option_sim_radar,
         "xingyao_data_status": xingyao_data_status,
+        "a_stock_data_status": a_stock_data_status,
         "coverage": coverage,
         "trading_day": {"is_open": True, "source": trading_day_source},
     }
@@ -3853,6 +3958,7 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
         "market_structure_policy": report.get("market_structure_policy", {}),
         "option_sim_radar": report.get("option_sim_radar", {}),
         "xingyao_data_status": report.get("xingyao_data_status", {}),
+        "a_stock_data_status": report.get("a_stock_data_status", {}),
         "action_stack": report.get("action_stack", {}),
         "coverage": report.get("coverage", {}),
         "failures": report.get("failures", []),
@@ -3863,10 +3969,10 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
 
     markdown = generate_markdown_report(report, subject)
     md_path.write_text(markdown, encoding="utf-8")
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=json_default), encoding="utf-8")
     (report_root / "latest.md").write_text(markdown, encoding="utf-8")
     (report_root / "latest.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2, default=json_default),
         encoding="utf-8",
     )
 

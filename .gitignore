@@ -11,6 +11,7 @@ vendor/
 data/*
 !data/.gitkeep
 !data/README.md
+!data/broker_account_snapshots.example.json
 data/paper_trade_journal.csv
 data/trade_journal.csv
 .DS_Store

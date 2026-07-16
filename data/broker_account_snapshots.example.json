@@ -1,0 +1,24 @@
+{
+  "snapshots": [
+    {
+      "snapshot_time": "2026-07-16 10:45:00",
+      "source": "manual broker screenshot transcription",
+      "total_assets": 0,
+      "available_cash": 0,
+      "securities_market_value": 0,
+      "daily_profit": 0,
+      "positions_visible": [
+        {
+          "code": "510300",
+          "name": "Example ETF",
+          "shares": 0,
+          "available": 0,
+          "price": 0,
+          "cost": 0,
+          "market_value": 0,
+          "daily_profit": 0
+        }
+      ]
+    }
+  ]
+}
