@@ -1,10 +1,12 @@
-# 基于 iFind 的 A股盘中交易决策工作台
+# 星耀 + iFind 双源 A 股盘中交易决策工作台
 
 [![ETF Strategy Monitor](https://github.com/Niki-Spatial-Art/Niki-Smart-Tools/actions/workflows/monitor.yml/badge.svg)](https://github.com/Niki-Spatial-Art/Niki-Smart-Tools/actions/workflows/monitor.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
 [![No Auto Trading](https://img.shields.io/badge/no%20auto%20trading-human%20review%20required-orange)](#限制与免责声明)
+[![星耀](https://img.shields.io/badge/星耀-已打通-brightgreen)](docs/xingyao_login_setup.md)
+[![iFind](https://img.shields.io/badge/iFind-校准模式-yellow)](docs/ifind_auth_and_privacy.md)
 
-这是一个面向个人 A股 / ETF 交易的本地决策工作台。它以 iFind 探针和本地回测为核心，把盘中行情、持仓风险、动作卡、纸面交易日志、盘后复盘和每日维护记录整理到一个可执行的流程里。
+这是一个面向个人 A股 / ETF 交易的本地决策工作台。它以**星耀 AmazingData** 为主数据底座、iFind 为校准源，把盘中行情、持仓风险、动作卡、纸面交易日志、盘后复盘和每日维护记录整理到一个可执行的流程里。
 
 它更像一个「交易纪律副驾驶」，不是自动下单工具。每天盘前、盘中、盘后，它主要帮你回答：
 
@@ -27,7 +29,7 @@
 
 一句话：
 
-> 基于 iFind 的 A股盘中交易决策工作台：盘前计划、盘中动作卡、持仓风控、回测复盘和每日维护记录。
+> 星耀 AmazingData 主数据底座 + iFind 校准 + 东方财富候补：盘前计划、盘中动作卡、持仓风控、回测复盘和每日维护记录。
 
 它关注的不是“自动替你买卖”，而是把交易前后的关键问题写清楚：
 
@@ -41,7 +43,7 @@
 
 如果要用一句话介绍给技术交流会或云厂商活动：
 
-> 这是一个“少架构”的个人 A股盘中交易决策工作台：iFind 做高质量数据底座，通义千问做可选中文策略简报，本地工作台把盘中动作卡、回测反馈、纸面交易日志和每日维护记录放在一起。
+> 这是一个"少架构"的个人 A股盘中交易决策工作台：星耀 AmazingData 做主数据底座，iFind 做校准源，通义千问做可选中文策略简报，本地工作台把盘中动作卡、回测反馈、纸面交易日志和每日维护记录放在一起。
 
 适合演示的 5 个点：
 
@@ -53,9 +55,11 @@
 
 ## 核心功能
 
-- **iFind 数据底座**：实时行情、基础数据、智能选股、历史行情、日内快照、公告查询的本地探针。
+- **星耀数据底座** ✅：AmazingData SDK 主数据源。实时行情、历史K线、财务报表（利润表/资产负债表/现金流）、基础数据（交易日历/代码表/复权因子）。详见 [登录配置](docs/xingyao_login_setup.md) | [连接器](connectors/xingyao.py)。
+- **iFind 数据底座**：实时行情、基础数据、智能选股、历史行情、日内快照、公告查询的本地探针（到期前作星耀交叉校准源）。
+- **FFD MCP** ⏳：资金流向、公告、研报、宏观数据 MCP 工具集（已配置，待启用）。
 - **盘中动作卡**：把“做/不做、买多少、哪里止损、哪里止盈、下一次检查时间”写成可执行提醒。
-- **行情与备份源**：东方财富、腾讯、新浪、Yahoo 兜底行情；星耀 / 玉衡期权基础数据探针。
+- **行情与备份源**：星耀主源（✅已打通）、东方财富候补、腾讯/新浪/Yahoo 兜底行情；玉衡期权基础数据探针。
 - **雷达与观察池**：ETF 红黄绿状态、A股强势观察、AI 基建主题池、期权仿真。
 - **盘前舆情扫描**：跟踪海外 X、国内社区和快讯政策，把 AI 基建、半导体、机器人、地缘和低风险情绪映射到持仓与观察池。
 - **风险纪律**：不追高、日内亏损软硬止损、T+1 提醒、单票仓位上限、QDII 溢价提醒、现金底线。
@@ -85,7 +89,9 @@
 ## 工作流
 
 ```text
-数据源
+星耀主源 (AmazingData SDK ✅)
+  + FFD MCP (资金流/公告/研报 ⏳)
+  + 东方财富 (候补)
   -> 盘前舆情 / 海外映射 / 国内社区
   -> 行情标准化
   -> ETF / A股 / 期权雷达
@@ -254,7 +260,7 @@ XINGYAO_SDK_PATHS
 |-- monitor.py                 # 主雷达与报告流程
 |-- ai_client.py               # 可选 AI 摘要客户端
 |-- emailer.py                 # 邮件发送
-|-- portfolio.json             # 公开示例配置
+|-- portfolio.json             # 公开示例配置（已更新持仓结构）
 |-- portfolio.example.json     # 本地配置模板
 |-- portfolio.local.json       # 私有持仓配置，不提交
 |-- digital_infra_watchlist.json
@@ -262,14 +268,19 @@ XINGYAO_SDK_PATHS
 |   |-- action_audit.py        # 动作卡导出、通知、汇总
 |   |-- ifind_http_probe.py    # iFind 探针
 |   |-- learning_intake.py     # 学习报告
+|   |-- xingyao_data_probe.py  # 星耀数据探针
 |   `-- local_dashboard.py     # 本地网页工作台
+|-- connectors/
+|   |-- xingyao.py             # ✅ 星耀 AmazingData 独立连接器
+|   |-- ifind_http.py          # iFind HTTP API 客户端
+|   `-- public_web_scraper.py  # 公开网页抓取器
 |-- agents/                    # Agent 职责说明
 |-- workflows/                 # 工作流文档和 demo
-|-- connectors/                # 数据接口说明
 |-- strategies/                # 策略与风控规则
 |-- backtests/                 # 回测路线和占位
+|-- dashboards/                # 星耀工作台 v2 HTML 原型
 |-- examples/                  # 示例输入
-|-- docs/                      # 架构和操作说明
+|-- docs/                      # 架构和操作说明（含星耀专题）
 |-- reports/                   # 生成报告，默认忽略
 `-- data/                      # 本地日志和缓存，默认忽略
 ```
@@ -292,6 +303,11 @@ XINGYAO_SDK_PATHS
 - [策略与风控](strategies/README.md)
 - [回测](backtests/README.md)
 - [学习摄取](docs/learning_intake.md)
+- **星耀专题**
+  - [登录配置](docs/xingyao_login_setup.md) — 环境变量、SDK安装、快速测试
+  - [工作台模块清单 v1](docs/xingyao_workbench_v1.md) — 五层数据、5个页面、图表方案
+  - [MCP-Agent 三层架构](docs/xingyao_mcp_agent_architecture.md) — MCP/Skill/Agent 设计
+  - [接口利用审计](docs/xingyao_interface_utilization_audit.md) — 逐接口核对清单
 - [iFind 授权与隐私](docs/ifind_auth_and_privacy.md)
 - [阿里云 API 使用说明](docs/alicloud_api_usage.md)
 - [盘前舆情情绪扫描规则](docs/morning_sentiment_scan_playbook_2026-06-08.md)

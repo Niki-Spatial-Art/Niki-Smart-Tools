@@ -29,6 +29,14 @@ from ai_client import generate_ai_summary
 from connectors import xingyao as xingyao_connector
 from emailer import EmailNotifier
 
+# 持仓雷达引擎（可选，星耀数智）
+try:
+    from tools.portfolio_radar_engine import run_portfolio_radar_once
+    _PORTFOLIO_RADAR_AVAILABLE = True
+except Exception:
+    _PORTFOLIO_RADAR_AVAILABLE = False
+    run_portfolio_radar_once = None
+
 
 def load_local_env(path: str = ".env") -> None:
     """Load local KEY=VALUE settings for Windows Task Scheduler runs."""
@@ -4384,6 +4392,19 @@ def main() -> bool:
     logger.info("=== ETF Strategy Monitor started ===")
     report = run_radar()
     report["ai_summary"] = generate_ai_summary(report)
+
+    # ─── 持仓雷达（星耀数智）───
+    if _PORTFOLIO_RADAR_AVAILABLE and run_portfolio_radar_once:
+        try:
+            logger.info("=== 持仓雷达（星耀数智）开始 ===")
+            portfolio_html = run_portfolio_radar_once()
+            if portfolio_html:
+                logger.info("持仓雷达报告已生成: %s", portfolio_html)
+                report["portfolio_radar_html"] = portfolio_html
+            else:
+                logger.warning("持仓雷达报告生成失败（返回空路径）")
+        except Exception as exc:
+            logger.warning("持仓雷达运行失败（不影响ETF雷达）: %s", exc)
 
     if not report["results"]:
         logger.warning("No ETF data available. Skipping email but returning success.")

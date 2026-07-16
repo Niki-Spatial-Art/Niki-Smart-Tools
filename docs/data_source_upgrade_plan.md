@@ -8,11 +8,11 @@ should not be the only source behind live decision support.
 
 | Layer | Target data | Preferred sources | Current role |
 | --- | --- | --- | --- |
-| A-share market data | Full A-share universe, price, turnover, volume ratio, board, industry, ST/suspension flags | iFinD, Tushare Pro, broker data, AKShare as helper | Must reach 5,000+ instruments or show gap |
-| ETF and QDII | Price, IOPV/premium, tracking index, holdings, FX and overseas risk | Authorized A-share data, iFinD/Tushare, exchange data | Core ETF decision layer |
+| A-share market data | Full A-share universe, price, turnover, volume ratio, board, industry, ST/suspension flags | **Galaxy Xingyao AmazingData ✅ (2026-06-18)** / iFinD / Tushare Pro / AKShare | 5,528 A-shares + 1,563 ETFs live |
+| ETF and QDII | Price, IOPV/premium, tracking index, holdings, FX and overseas risk | **Xingyao ETF list ✅** / Authorized A-share data, iFinD/Tushare, exchange data | 1,563 ETF codes live; QDII premiums need supplement |
 | US ETFs / global assets | US ETF price, holdings, index, pre/post-market, FX | Polygon, Finnhub, Nasdaq Data Link, Morningstar | Needed for Nasdaq/S&P/QDII checks |
-| Options | Contract chain, premium, IV, Greeks, volume, OI | Broker option chain, exchange authorized data, Xingyao as basic-contract cache | Current option page is simulation only |
-| Fundamentals | Financial statements, valuation, forecasts, announcements | iFinD, Tushare Pro, CNINFO, exchange announcements, Morningstar | Avoid earnings and valuation blind spots |
+| Options | Contract chain, premium, IV, Greeks, volume, OI | Broker option chain, exchange authorized data, **Xingyao option basics ✅** | Basic contract cache live; Greeks/IV need supplement |
+| Fundamentals | Financial statements, valuation, forecasts, announcements | **Xingyao InfoData ✅** / iFinD / Tushare Pro / CNINFO | Income/Balance/Cashflow statements live |
 | News and sentiment | Announcements, industry news, regulatory risk, negative sentiment | CNINFO, exchange sites, company IR, RSS, Finnhub/Benzinga-style news APIs | Evidence pool only; never direct buy signal |
 
 ## Procurement Priority

@@ -1,90 +1,164 @@
 ---
 name: mason-trading-knowledge
-description: Personal Mason/梅森/梅家圈 A-share trading knowledge-base workflow for turning a local folder of reports, PDFs, Excel sheets, and circle notes into theme logic, watchlist context, buy/sell/hold/reduce/clear action cards, position discipline, and post-close review. Use when the user mentions 梅森, 梅家圈, 梅花庄, 双跌买点, 顺大势逆小势, 盘中动作卡, 交易知识库, or asks how a theme/stock/ETF fits their account.
+description: Personal Mason/梅森/梅家圈 A-share trading knowledge-base workflow for turning local reports, PDFs, Excel sheets, screenshots, circle notes, and Xingyao radar data into theme logic, watchlist context, buy/sell/hold/reduce/clear action cards, position discipline, and post-close review. Use when the user mentions 梅森, 梅家圈, 梅花庄, 双跌买点, 顺大势逆小势, 均线引力, 主线支线, 同方向风险, 动作卡, 交易纪律, or asks how a theme/stock/ETF fits their account.
 ---
 
-# Mason Trading Knowledge
+# 梅森交易知识体系
 
-Use this skill as a personal research and discipline layer, not as investment advice or automated trading. It helps translate the user's local Mason/梅家圈 materials into practical A-share/ETF decision support.
+## 核心原则
 
-## Safety Boundary
+1. **顺大势、逆小势** — 只在趋势方向向上时操作；小级别回踩是买点，不是卖点
+2. **双跌买点** — 日内有两个下跌波段（或价格两次回踩关键支撑），且第二跌不破第一跌低点，是低吸区域
+3. **主线 > 支线** — 资金只在主线里反复；支线只有脉冲，不成趋势
+4. **均线引力** — 价格远离均线（MA20/MA60）时有回归需求；乖离率过大不追
+5. **同方向风险过滤** — 账户里已有同板块/同题材持仓，不再加仓（避免一端倒）
+6. **账户纪律优先** — 方法论让位于账户风险：仓位上限、止损线、不追高
 
-- Never place orders or operate broker software.
-- Never promise profits or say a trade is guaranteed.
-- Do not upload or quote long copyrighted source documents.
-- Treat source materials as evidence and style references, then adapt them to the user's current portfolio, cash, risk tolerance, and A-share rules.
-- If data is stale, user-reported, or from screenshots, say so.
+---
 
-## Source Layout
+## 趋势判断
 
-Default local source folder:
+### 大势（日线/周线）
+- MA20 > MA60 → 上升趋势 ✅
+- 价格站上 MA20 → 可操作区
+- 价格 < MA60 且 MA20 < MA60 → 下降趋势，只减不加
 
-```text
-D:\梅森
+### 小势（30min/60min）
+- 小级别回踩 MA20 不破 → 逆小势买点
+- 小级别跌破 MA20 且放量 → 小势转弱，等企稳
+
+### 均线引力计算
+```
+引力强度 = |价格 - MA20| / MA20
+乖离率 > 5% → 不追高，等回踩
+乖离率 < -3% → 超跌，可关注双跌买点
 ```
 
-Default workbench index:
+---
 
-```text
-data\mason_library\mason_library_index.json
+## 买点判断框架
+
+### 双跌买点（核心买点）
+条件同时满足：
+1. 大势向上（MA20 > MA20 昨日，或价格 > MA20）
+2. 日内/近3日有两次回跌
+3. 第二跌低点 ≥ 第一跌低点（不创新低）
+4. 第二跌缩量（成交量 < 第一跌）
+
+信号输出：
+- ✅ 双跌买点确认 → 可低吸，仓位核心仓 1/3
+- ⚠ 双跌但第二跌破位 → 观望，等止损线
+- ❌ 大势向下中的双跌 → 不操作，可能是下跌中继
+
+### 顺大势逆小势买点
+条件：
+1. 大势向上 ✅
+2. 小级别（30min）回踩 MA20 或 MA60
+3. 回踩时缩量
+4. 价格在小级别 MA 附近获得支撑（影线/阳线收复）
+
+---
+
+## 主线/支线判断
+
+### 主线特征（资金持续流入）
+- 板块指数 5 日涨幅 > 大盘 5 日涨幅
+- 成交额持续排名前 10
+- 有政策/产业逻辑支撑（不是纯情绪）
+- 龙头股不破 MA20
+
+### 支线特征（脉冲行情）
+- 单日放量拉升，次日缩量
+- 无持续资金流入
+- 龙头股破 MA20 后无力收复
+
+### 当前 A 股常见主线（2025-2026）
+| 主线 | 代表 ETF/股票 | 逻辑 |
+|------|----------------|------|
+| AI 算力/光互联 | 515050 通信ETF、600487 亨通光电 | CPO/光模块迭代 |
+| 半导体/芯片 | 588000 科创50ETF、512760 半导体ETF | 国产替代 |
+| 机器人 | 相关个股 | 人形机器人量产预期 |
+| 小金属/稀土 | 600549 厦门钨业 | 供需缺口 |
+
+---
+
+## 账户仓位纪律
+
+### 晶晶账户参数
+- 总资产：约 45 万（证券账户约 30 万）
+- 当前持仓：券商ETF、化工ETF、恒生科技ETF、科创50ETF、中证1000ETF
+- 仓位上限：单只 ETF ≤ 25%；同方向（科技）合计 ≤ 50%
+- 止损线：单只 -8% 减仓；-12% 清仓
+- 禁止：创业板/科创板个股（除非 ETF 形式）
+
+### 同方向风险过滤
+当前持仓方向：
+- 科技：科创50ETF（盈利）、中证1000ETF（盈利）→ 科技方向已够，不再加科技
+- 港股：恒生科技ETF（深套）→ 港股方向已够
+- 周期：化工ETF（深套）→ 等反转信号，不补仓
+- 金融：券商ETF（深套）→ 等牛市确认
+
+**新增持仓前检查：**
+1. 是否与现有持仓同方向？→ 是，则仓位 ≤ 观察仓（5%）
+2. 是否追高（今日涨幅 > 3%）？→ 是，则等回踩
+3. 是否乖离率过大（价格 > MA20 × 1.05）？→ 是，则等回踩
+
+---
+
+## 动作卡输出格式
+
+```
+【标的】515050 通信ETF
+【当前价】1.234  (+2.1%)
+【梅森判断】
+  - 大势：MA20 > MA60，上升趋势 ✅
+  - 小势：今日回踩 MA20 后企稳，缩量 ✅
+  - 主线：AI 光互联是当前主线 ✅
+  - 乖离率：+1.2%，正常区间 ✅
+  - 同方向风险：账户已有科创50ETF，同属科技方向 ⚠
+【动作】持有观察，不追高
+【仓位】已持有则持有，未持有则等回踩 MA20 再买
+【触发价】回踩 MA20（约 1.210）且缩量
+【止损价】跌破 MA60（约 1.150）清仓
+【账户影响】如买入，科技方向合计超限，不建议加仓
 ```
 
-If the index is missing or stale, run:
+---
 
-```powershell
-python tools/index_mason_library.py --source "D:\梅森"
-```
+## 盘前/盘中/复盘问题模板
 
-## Core Method
+### 盘前
+- `用梅森+星耀综合体，给我今天盘前计划`
+  → 输出：今日大势判断 + 持仓优先级 + 仓位上限 + 可关注方向
 
-Answer in this order during market hours:
+### 盘中
+- `现在用星耀拉最新行情，结合梅森双跌买点，告诉我能不能买`
+  → 输出：动作卡（买/不买/持有/减/清 + 理由 + 触发价 + 止损价）
 
-1. Identify the theme: macro/style, AI compute, CPO/optical communication, PCB/ABF, semiconductor/materials, small metals, energy/chemical, robot/AI application, or other.
-2. Check whether the user's account already has exposure to that theme.
-3. Translate the Mason logic into a decision card, not a story.
-4. Prefer "wait/no add" unless there is a real setup: big trend intact + short-term pullback + account has risk room.
-5. Use small position sizing for new positions. Do not let FOMO turn a clean adjustment into overtrading.
+### 复盘
+- `复盘我今天的交易：哪些符合梅森纪律，哪些是 FOMO`
+  → 对照账户实际操作记录（需用户提供）逐一判断
 
-## Output Format
+---
 
-For intraday questions, output a compact action card:
+## 与星耀数据联动
 
-```text
-动作：买 / 不买 / 持有 / 减 / 清
-置信度：低 / 中 / 高
-触发：价格或盘面条件
-失效：跌破/放量转弱/主题证伪/账户风险超限
-仓位：股数、份额或金额上限
-风险：T+1、同方向拥挤、节假日、回撤金额
-下次检查：时间或价格
-```
+星耀提供的字段 → 梅森指标映射：
 
-For learning/research questions, output:
+| 星耀字段 | 梅森指标 | 计算方式 |
+|----------|----------|----------|
+| last_price | 当前价 | 直接读取 |
+| MA20 | 短期趋势 | 20日均线 |
+| MA60 | 中期趋势 | 60日均线 |
+| pct_change | 今日涨跌 | 判断追高/杀跌 |
+| total_value_trade | 成交额 | 放量/缩量判断 |
+| K线数据 | 双跌判断 | 近3日是否有两次回踩 |
 
-- Theme thesis
-- Key evidence from local index
-- A-share mapping
-- Suitable products for this user's account
-- Avoid/chase-risk list
-- Action-card rule that can be reused
+---
 
-## User-Specific Rules
+## 注意
 
-- The user often cannot buy ChiNext `300xxx`; filter direct `300` stocks unless they say access changed.
-- Be cautious with STAR `688xxx` direct stocks; ETFs are usually cleaner unless the user confirms access and risk tolerance.
-- The user tends to FOMO after group messages. Anchor on: "not every good stock is suitable for this account today."
-- Do not suggest transferring bank cash into the brokerage account to chase.
-- Repeated same-theme exposure counts as one risk bucket. Example: `515050` + `600487` + `588000` already creates technology/communication beta.
-
-## Mason Heuristics To Apply
-
-- 顺大势、逆小势: only buy when market/sector trend is up but short-term price pulls back.
-- 双跌买点: market and target both dip, but trend is not broken.
-- 均线引力: when price is far above moving averages, prefer holding existing positions, not chasing.
-- 圈内不缺机会: missing one ticket is acceptable; losing discipline is the bigger cost.
-- 赚自己认知内的钱: prefer products and themes the user's account can actually hold through volatility.
-
-## References
-
-Read `references/action_card_rules.md` when generating trade cards.
-Read `references/theme_taxonomy.md` when mapping a document/theme to A-share sectors and likely ETFs/stocks.
+- 本知识库是**方法论框架**，不是具体投资建议
+- 所有动作卡必须结合**账户实际持仓**和**仓位纪律**
+- 星耀数据是实时参考，最终决策由用户自己做出
+- ETF 比个股更适合本账户（避免个股风险、创业板/科创板限制）

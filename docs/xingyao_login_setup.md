@@ -1,5 +1,10 @@
 # 星耀 AmazingData 登录配置
 
+> **状态：✅ 已打通 (2026-06-18 验证)**
+> 
+> SDK tgw-1.0.8.7 + AmazingData-1.1.6-cp313 已安装到隔离 Python venv。
+> Windows 用户级环境变量已配置，可直接登录使用。
+
 所有星耀数据接口调用前，必须先登录 AmazingData SDK：
 
 ```python
@@ -8,64 +13,114 @@ import AmazingData as ad
 ad.login(
     username="username",
     password="password",
-    host="101.230.159.234",
+    host="101.230.159.234",   # 电信
+    # host="140.206.44.234",  # 联通备用
     port=8600,
 )
 ```
 
-本项目统一通过 `monitor.xingyao_login()` 执行登录。业务代码不要直接绕过这个函数调用星耀接口。
+## 当前配置环境
 
-## 本机环境变量
+| 项目 | 状态 |
+|------|------|
+| SDK 版本 | AmazingData 1.1.6 + tgw 1.0.8.7 |
+| Python | 3.13.12 (隔离 venv) |
+| 安装路径 | `~/.workbuddy/binaries/python/envs/default/` |
+| 服务器 | 101.230.159.234:8600 (电信) |
+| 有效期 | 2026-05-21 ~ 2027-05-21 |
+| 交易日历 | ✅ 8664 个，最新 2026-06-18 |
+| A 股列表 | ✅ 5528 只 |
+| ETF 列表 | ✅ 1563 只 |
+| K 线查询 | ✅ 正常 |
+| 财务报表 | ✅ 利润表/资产负债表/现金流量表 |
+| 实时快照 | ⚠️ 接口可调用，需验证盘中延迟 |
+| 本地缓存 | ⚠️ D:\AmazingData_local_data\ 需创建并授权 |
+
+## 环境变量
+
+### 方式一：AD_* 命名（推荐，与星耀官方一致）
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('AD_USERNAME', '你的账号', 'User')
+[System.Environment]::SetEnvironmentVariable('AD_PASSWORD', '你的密码', 'User')
+[System.Environment]::SetEnvironmentVariable('AD_HOST', '101.230.159.234', 'User')
+[System.Environment]::SetEnvironmentVariable('AD_PORT', '8600', 'User')
+```
+
+### 方式二：XINGYAO_* 命名（与 Niki-Smart-Tools 兼容）
 
 ```powershell
 $env:XINGYAO_ENABLED="true"
-$env:XINGYAO_USER="your_xingyao_username"
-$env:XINGYAO_PASSWORD="your_xingyao_password"
+$env:XINGYAO_USER="你的账号"
+$env:XINGYAO_PASSWORD="你的密码"
 $env:XINGYAO_HOST="101.230.159.234"
 $env:XINGYAO_PORT="8600"
-$env:XINGYAO_SDK_PATHS="C:\path\to\amazingdata_sdk;C:\path\to\xingyao_sdk"
 ```
 
-也兼容 `XINGYAO_USERNAME` 和星耀数智 skills 文档里的 `AD_USERNAME`。密码、host、port 也兼容 `AD_PASSWORD`、`AD_HOST`、`AD_PORT`。
+### 方式三：GitHub Actions Secrets
 
-如果按星耀数智 skills 的口令风格配置，可以使用：
+在仓库 Settings → Secrets and variables → Actions 中添加：
+- `XINGYAO_ENABLED` = `true`
+- `XINGYAO_USER` = 你的账号
+- `XINGYAO_PASSWORD` = 你的密码
+- `XINGYAO_HOST` = `101.230.159.234`
+- `XINGYAO_PORT` = `8600`
 
-```powershell
-$env:AD_USERNAME="your_xingyao_username"
-$env:AD_PASSWORD="your_xingyao_password"
-$env:AD_HOST="101.230.159.234"
-$env:AD_PORT="8600"
+## 代码调用
+
+### 通过 connectors/xingyao.py（推荐）
+
+```python
+from connectors.xingyao import login, get_kline, get_calendar, diagnostics
+
+# 诊断
+print(diagnostics())
+
+# 获取 K 线
+kline = get_kline(["510050.SH"], 20260601, 20260618, period="day")
 ```
 
-可选备用地址：
+### 通过 monitor.py（兼容旧代码）
 
-```powershell
-$env:XINGYAO_HOST="140.206.44.234"
+```python
+import monitor
+
+monitor.add_xingyao_sdk_paths()
+monitor.xingyao_login()
+
+# 获取快照
+rows = monitor.fetch_xingyao_snapshot_rows(["510050.SH", "588000.SH"])
 ```
 
 ## 安全边界
 
-- 不要把真实密码写进代码、README、报告或 GitHub。
-- 推荐用 `run_xingyao_data_probe.ps1` 交互输入密码，脚本结束后会清理进程环境变量。
-- 本地工作台只展示账号掩码、host、port、SDK 路径数量和接口状态，不展示密码。
-- 登录未就绪时，星耀接口只能显示为计划/待联调，动作卡必须降级为观察。
+- ❌ 不要把真实密码写进代码、README、报告或 GitHub
+- ✅ 使用 Windows 用户级环境变量（永久，不随终端关闭消失）
+- ✅ 密码在日志中自动掩码（仅显示前 3 位）
+- ✅ `.env` 文件在 `.gitignore` 中已排除
+- ⚠️ `D:\AmazingData_local_data\` 缓存目录需手动创建并给予 WorkBuddy 沙箱写入权限
 
-## 探针命令
+## 快速测试
 
-```powershell
-cd C:\Users\Niki_Spatial\Documents\Codex\2026-06-11\files-mentioned-by-the-user-amazingdata\work\Niki-Smart-Tools
-powershell -NoProfile -ExecutionPolicy Bypass -File .\run_xingyao_data_probe.ps1 -WithKline
+```bash
+# 在 WorkBuddy 隔离 venv 中测试
+"C:/Users/Niki_Spatial/.workbuddy/binaries/python/envs/default/Scripts/python.exe" -c "
+from connectors.xingyao import diagnostics
+import json
+print(json.dumps(diagnostics(), ensure_ascii=False, indent=2))
+"
 ```
 
-脚本会提示输入 SDK 根目录、账号和密码。host/port 默认使用 `101.230.159.234:8600`。
+## 常见问题
 
-## 星耀数智 skills 与 AmazingData 的关系
+**Q: ImportError: No module named 'AmazingData'**
+A: 需要安装 tgw 和 AmazingData wheel 包到 Python 环境。
 
-星耀数智 skills 是上层 AI 技能编排，包含：
+**Q: TGW Logon failed / Permission denied**
+A: 需要在 WorkBuddy 沙箱中授予 `C:\Users\Public\Documents\mdga_file\` 读写权限。
 
-- 金融数据 skill：行情、财务、股东股本等数据。
-- 技术面指标 skill：超买超卖、趋势、能量、成交量、均线、路径等指标。
-- 基本面指标 skill：盈利、成长、运营效率、盈余质量、安全性、治理、估值、股东、规模等指标。
-- 因子分析 skill：因子检验、有效性分析、因子合成、拥挤度、分层回测、IC、回归和报告。
+**Q: 财务数据报 pytables 错误**
+A: `pip install tables` 安装 HDF5 支持。
 
-AmazingData/TGW 是底层数据接口，负责登录、取数、缓存、探针和路由。工作台会把两层分开展示：先看登录和数据流是否可用，再看 skills 能力如何进入动作卡、图表、风控和研究库。
+**Q: 本地缓存写入失败**
+A: 手动创建 `D:\AmazingData_local_data\`，并授予 WorkBuddy 沙箱写入权限。

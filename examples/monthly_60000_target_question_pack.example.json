@@ -1,0 +1,58 @@
+{
+  "as_of": "2026-06-19",
+  "name": "monthly_60000_target_workflow",
+  "purpose": "Use Mason trading knowledge, Xingyao market data, monitor.py radar, and the user's portfolio to review last week, simulate alternatives, and build next-week trading expectations toward a 60,000 RMB monthly profit target.",
+  "capital": {
+    "total_capital_cny": 450000,
+    "monthly_profit_target_cny": 60000,
+    "required_monthly_return_pct": 13.33,
+    "rough_weekly_profit_target_cny": 15000,
+    "rough_daily_profit_target_cny": 3000,
+    "bank_cash_rule": "Do not transfer bank cash into brokerage account for intraday chasing."
+  },
+  "workflow": [
+    {
+      "step": "weekly_review",
+      "questions": [
+        "上周账户总盈亏是多少？收益来自市场beta、主题选择、个股选择、择时还是仓位？",
+        "哪些交易符合梅森双跌买点？哪些是追高、FOMO或补亏？",
+        "哪些仓位是核心仓、试错仓、拖累仓、应清理仓？"
+      ]
+    },
+    {
+      "step": "backtest_simulation",
+      "questions": [
+        "把上周真实交易路径与纪律路径对比：如果只买双跌买点、不追高，收益和回撤会怎样？",
+        "如果每笔触发失效线就减/清，上周会少亏还是错过反弹？",
+        "哪些setup需要继续积累样本，哪些应该淘汰？"
+      ]
+    },
+    {
+      "step": "market_heat_forecast",
+      "questions": [
+        "用星耀看行业、ETF、成交额、量比、涨跌家数，当前市场热度在哪些方向？",
+        "这些热度方向在梅森资料库里属于主线、支线、过热还是旧题材反抽？",
+        "下周如果高开、低开、震荡，分别该怎么处理？"
+      ]
+    },
+    {
+      "step": "next_week_plan",
+      "questions": [
+        "下周最多3个核心持仓动作是什么？",
+        "下周最多3个候选观察是什么？必须等什么触发条件？",
+        "下周最多3个明确不做是什么？原因是追高、买不了、重复同方向还是逻辑弱？"
+      ]
+    },
+    {
+      "step": "monthly_target_control",
+      "questions": [
+        "以45万本金月赚6万为目标，本周还差多少？目标是否过度激进？",
+        "本周最大允许亏损是多少？亏到哪里必须降仓？",
+        "是否允许扩大仓位？如果允许，只能在哪些正期望setup上扩大？"
+      ]
+    }
+  ],
+  "one_click_prompt": "用梅森交易知识库 + 星耀实时数据 + monitor.py 持仓雷达，基于我上周表现做周复盘、回测模拟和下周预案。我的终极目标是45万本金月收益6万，但请先判断这个目标在当前市场下是否应该进攻、保守推进，还是暂停放大。要求输出：1. 上周收益归因；2. 纪律复盘；3. 真实路径 vs 纪律路径 vs 风险路径；4. 当前市场热度；5. 下周最多3个核心持仓动作、3个候选观察、3个明确不做；6. 每个标的给动作、触发价、失效线、仓位上限；7. 月入6万目标进度和最大允许亏损；8. 不要建议我动用微众银行现金追涨。",
+  "pre_market_prompt": "基于上周复盘和今天盘前星耀数据，给我今天的执行计划。只输出：核心持仓怎么处理、候选票是否等待双跌买点、今天禁止做什么、单票最大金额。",
+  "post_close_prompt": "基于今天成交和持仓截图，更新月入6万目标进度。判断今天是纪律加分还是扣分。如果今天亏了，明天是防守、修复还是继续进攻？"
+}
