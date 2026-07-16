@@ -193,9 +193,10 @@ def fetch_radar_data(positions: list, ad, portfolio: dict | None = None) -> dict
 
         cost = pos.get("cost")
         shares = pos.get("shares", 0)
-        profit_pct = ((price - cost) / cost * 100) if price and cost else pos.get("profit_pct")
+        valid_cost = cost is not None and cost > 0
+        profit_pct = ((price - cost) / cost * 100) if price and valid_cost else pos.get("profit_pct")
         market_value = price * shares if price and shares else None
-        cost_value = cost * shares if cost and shares else None
+        cost_value = cost * shares if valid_cost and shares else None
         unrealized_pnl = (market_value - cost_value) if market_value and cost_value else None
 
         # 信号打分
