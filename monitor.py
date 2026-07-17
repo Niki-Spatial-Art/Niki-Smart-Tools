@@ -694,7 +694,7 @@ def xingyao_login():
         )
 
     host = os.getenv("XINGYAO_HOST", "101.230.159.234")
-    port = int(os.getenv("XINGYAO_PORT", "8600"))
+    port = int(os.getenv("XINGYAO_PORT", "8600") or "8600")
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         ok = ad.login(username=username, password=password, host=host, port=port)
     if not ok:

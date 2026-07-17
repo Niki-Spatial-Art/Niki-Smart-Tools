@@ -66,10 +66,10 @@ def _env(key: str, fallback: str = "") -> str:
     # fallback: AD_ → XINGYAO_ 或反之
     if key.startswith("AD_"):
         alt = "XINGYAO_" + key[3:]
-        return os.environ.get(alt, fallback)
+        return os.environ.get(alt) or fallback
     if key.startswith("XINGYAO_"):
         alt = "AD_" + key[len("XINGYAO_"):]
-        return os.environ.get(alt, fallback)
+        return os.environ.get(alt) or fallback
     return fallback
 
 
