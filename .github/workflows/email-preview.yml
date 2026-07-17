@@ -2,6 +2,9 @@ name: Investment Workbench Market Scan Email
 
 on:
   workflow_dispatch:
+  schedule:
+    # GitHub cron uses UTC. Beijing time: 15:35 on weekdays.
+    - cron: '35 7 * * 1-5'
 
 permissions:
   contents: read

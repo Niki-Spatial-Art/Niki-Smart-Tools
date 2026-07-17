@@ -158,6 +158,7 @@ def latest_plan_rows(report: Path, journal: Path) -> List[Dict[str, str]]:
 def build_plan_message(report: Path, journal: Path) -> tuple[str, str]:
     rows = latest_plan_rows(report, journal)
     generated_at = ""
+    new_entry_gate = {}
     try:
         payload = json.loads(report.read_text(encoding="utf-8"))
         generated_at = (
@@ -166,11 +167,12 @@ def build_plan_message(report: Path, journal: Path) -> tuple[str, str]:
             or payload.get("generated_at")
             or ""
         )
+        new_entry_gate = (payload.get("action_stack") or {}).get("new_entry_gate") or {}
     except Exception:
         generated_at = ""
 
     lines = [
-        "Action Card Audit 09:00",
+        "Intraday Action Card Scan",
         f"report={report}",
         f"journal={journal}",
         f"generated_at={generated_at or '-'}",
@@ -180,10 +182,16 @@ def build_plan_message(report: Path, journal: Path) -> tuple[str, str]:
         "2. Before any real buy, write why buy, how much, and next trading-day exit plan.",
         "3. A-share T+1: same-day sell is unavailable for new buys.",
     ]
+    gate_label = "OPEN: manual review allowed" if not new_entry_gate.get("blocked") else "CLOSED: no new entry"
+    lines.extend([
+        "",
+        f"New-entry gate: {gate_label}",
+        f"Gate reason: {new_entry_gate.get('reason') or '-'}",
+    ])
 
     if not rows:
         lines.extend(["", "No action cards were found in the latest report.", "Keep the morning report as observation only; do not force a trade."])
-        return "Action Card Audit 09:00 - no cards", "\n".join(lines)
+        return "Niki intraday action cards - no new entry", "\n".join(lines)
 
     lines.append("")
     lines.append("Latest action cards:")
@@ -197,7 +205,7 @@ def build_plan_message(report: Path, journal: Path) -> tuple[str, str]:
                 f"  reason={row.get('reason') or '-'}",
             ]
         )
-    return "Action Card Audit 09:00 - paper plan", "\n".join(lines)
+    return "Niki intraday action cards - manual review", "\n".join(lines)
 
 
 def send_plan_email(report: Path, journal: Path) -> bool:
@@ -222,7 +230,7 @@ def send_plan_email(report: Path, journal: Path) -> bool:
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #222;">
-        <h2>Action Card Audit 09:00</h2>
+        <h2>Niki 盘中动作卡扫描</h2>
         <pre style="font-size: 14px; line-height: 1.65; white-space: pre-wrap;">{html.escape(message)}</pre>
       </body>
     </html>

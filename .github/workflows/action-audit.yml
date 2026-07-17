@@ -1,14 +1,17 @@
-name: Action Card Audit
+name: Intraday Action Card Scan
 
 on:
   workflow_dispatch:
   schedule:
-    # GitHub cron uses UTC. Beijing time: 09:00 on weekdays.
-    - cron: '0 1 * * 1-5'
+    # GitHub cron uses UTC. Beijing time: 09:45, 10:45, 14:20 on weekdays.
+    - cron: '45 1 * * 1-5'
+    - cron: '45 2 * * 1-5'
+    - cron: '20 6 * * 1-5'
 
 jobs:
   action-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -17,12 +20,20 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -r requirements-a-stock.txt
+
+      - name: Refresh public quote and K-line route
+        run: >-
+          python tools/a_stock_radar_snapshot.py
+          --codes 588000,512100,512000,159870,513180,510050,510880
 
       - name: Build latest report without sending monitor email
         run: python monitor.py
         env:
           MONITOR_SEND_EMAIL: "false"
+          XINGYAO_ENABLED: "false"
+          XINGYAO_QUOTE_PRIORITY: "false"
+          OPTION_SIM_RADAR_ENABLED: "false"
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
@@ -32,12 +43,6 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          XINGYAO_ENABLED: ${{ secrets.XINGYAO_ENABLED }}
-          XINGYAO_USER: ${{ secrets.XINGYAO_USER }}
-          XINGYAO_PASSWORD: ${{ secrets.XINGYAO_PASSWORD }}
-          XINGYAO_HOST: ${{ secrets.XINGYAO_HOST }}
-          XINGYAO_PORT: ${{ secrets.XINGYAO_PORT }}
-          XINGYAO_SDK_PATHS: ${{ secrets.XINGYAO_SDK_PATHS }}
 
       - name: Export action cards to paper journal
         run: python tools/action_audit.py export-plan --report reports/latest.json --journal data/paper_trade_journal.csv
