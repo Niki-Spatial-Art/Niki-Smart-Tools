@@ -1,4 +1,4 @@
-name: Investment Workbench Email Preview
+name: Investment Workbench Market Scan Email
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 jobs:
   send-preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -20,7 +20,7 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-a-stock.txt
 
-      - name: Send manual email preview
+      - name: Scan market and send manual email
         run: python tools/send_workbench_email_preview.py
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}

@@ -1449,6 +1449,38 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     raw_seen_codes = set()
     seen_codes = set()
     total_rows_seen = 0
+    breadth = {"advancers": 0, "decliners": 0, "flat": 0, "sample_rows": 0, "total_amount": 0.0}
+    industry_breadth = {}
+
+    def record_market_breadth(row: Dict) -> None:
+        nonlocal total_rows_seen
+        code = str(row.get("f12") or row.get("code") or "").strip()
+        name = str(row.get("f14") or row.get("name") or "").strip()
+        if not code or code in raw_seen_codes:
+            return
+        raw_seen_codes.add(code)
+        total_rows_seen += 1
+        if not is_tradeable_a_share_code(code, name):
+            return
+        pct = safe_float(row.get("f3") if row.get("f3") is not None else row.get("pct_change"))
+        if pct is None:
+            return
+        breadth["sample_rows"] += 1
+        if pct > 0:
+            breadth["advancers"] += 1
+        elif pct < 0:
+            breadth["decliners"] += 1
+        else:
+            breadth["flat"] += 1
+        amount = safe_float(row.get("f6") if row.get("f6") is not None else row.get("amount")) or 0.0
+        breadth["total_amount"] += amount
+        industry = str(row.get("f100") or row.get("industry") or "").strip() or "未分类"
+        stats = industry_breadth.setdefault(industry, {"name": industry, "count": 0, "advancers": 0, "decliners": 0, "pct_sum": 0.0, "amount": 0.0})
+        stats["count"] += 1
+        stats["advancers"] += int(pct > 0)
+        stats["decliners"] += int(pct < 0)
+        stats["pct_sum"] += pct
+        stats["amount"] += amount
     started_at = time.monotonic()
     sources = [item.strip().lower() for item in os.getenv("BROAD_MARKET_SOURCES", "eastmoney,sina").split(",") if item.strip()]
 
@@ -1469,10 +1501,7 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
                     continue
                 source_counts[source] = source_counts.get(source, 0) + len(rows)
                 for row in rows:
-                    code = str(row.get("f12") or row.get("code") or "").strip()
-                    if code and code not in raw_seen_codes:
-                        raw_seen_codes.add(code)
-                        total_rows_seen += 1
+                    record_market_breadth(row)
                     row_with_source = dict(row)
                     row_with_source["_source"] = source
                     item = classify_market_candidate(row_with_source, layer_index)
@@ -1505,10 +1534,7 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
                     break
                 source_counts[source] = source_counts.get(source, 0) + len(rows)
                 for row in rows:
-                    code = str(row.get("f12") or row.get("code") or "").strip()
-                    if code and code not in raw_seen_codes:
-                        raw_seen_codes.add(code)
-                        total_rows_seen += 1
+                    record_market_breadth(row)
                     row_with_source = dict(row)
                     row_with_source["_source"] = source
                     item = classify_market_candidate(row_with_source, layer_index)
@@ -1523,6 +1549,11 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
     candidates.sort(key=lambda item: item.get("score", 0), reverse=True)
     max_results = int(os.getenv("BROAD_MARKET_MAX_RESULTS", "50"))
     capacity = max_pages * page_size
+    industries = []
+    for item in industry_breadth.values():
+        item["avg_pct"] = round(item.pop("pct_sum") / item["count"], 2) if item["count"] else 0.0
+        industries.append(item)
+    industries.sort(key=lambda item: (item["avg_pct"], item["amount"]), reverse=True)
     return {
         "enabled": True,
         "scan_pages": max_pages,
@@ -1535,6 +1566,8 @@ def run_broad_market_scan(watchlist: Dict) -> Dict:
         "scan_capacity": max_pages * page_size * max(len(sources), 1),
         "candidate_count": len(seen_codes),
         "results": candidates[:max_results],
+        "breadth": breadth,
+        "industry_breadth": industries,
         "failures": failures,
     }
 
