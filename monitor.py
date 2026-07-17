@@ -80,7 +80,7 @@ DEFAULT_WATCHLIST = [
 DEFAULT_OPTION_ETF_WATCHLIST = ["510300", "588000", "512100", "510050"]
 DEFAULT_HIGH_RISK_CODES = {"513310"}
 DEFAULT_QDII_CODES = {"513310", "159696", "513180", "513500"}
-DEFAULT_PORTFOLIO_FILE = "portfolio.local.json" if Path("portfolio.local.json").exists() else "portfolio.example.json"
+DEFAULT_PORTFOLIO_FILE = "portfolio.local.json"
 PORTFOLIO_FILE = os.getenv("PORTFOLIO_FILE", DEFAULT_PORTFOLIO_FILE)
 REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
 XINGYAO_CACHE_PATH = os.getenv("XINGYAO_CACHE_PATH", "data/xingyao_option_basic_cache.json")
@@ -3683,6 +3683,7 @@ def short_term_pilot_html(portfolio: Dict) -> str:
 def generate_markdown_report(report: Dict, subject: str) -> str:
     metadata = build_report_metadata(report, subject)
     portfolio = report.get("portfolio", {})
+    portfolio_configured = bool(portfolio)
     session = report.get("session", {})
     upgrade_lines = [
         "## 系统升级状态",
@@ -3710,13 +3711,18 @@ def generate_markdown_report(report: Dict, subject: str) -> str:
         *upgrade_lines,
         "## 账户配置",
         "",
-        f"- 总资金：{yuan(portfolio.get('total_capital'))}",
-        f"- 现金：{yuan(portfolio.get('cash'))}",
-        f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
-        *capital_plan_summary_lines(portfolio),
-        *short_term_pilot_summary_lines(portfolio),
+        *(
+            [
+                f"- 总资金：{yuan(portfolio.get('total_capital'))}",
+                f"- 现金：{yuan(portfolio.get('cash'))}",
+                f"- 单只 ETF 上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}",
+                *capital_plan_summary_lines(portfolio),
+                *short_term_pilot_summary_lines(portfolio),
+            ]
+            if portfolio_configured
+            else ["- 未加载私有账户配置；本邮件不展示模板资金或仓位。"]
+        ),
         *action_plan_markdown_lines(report),
-        *tomorrow_task_markdown_lines(report),
         "",
         "## 雷达结果",
         "",
@@ -4041,6 +4047,15 @@ def save_report_archive(report: Dict, subject: str) -> Dict[str, str]:
 def generate_html_email(report: Dict) -> str:
     ai_summary = report.get("ai_summary", "")
     session = report.get("session", {})
+    portfolio = report.get("portfolio") or {}
+    if portfolio:
+        account_html = (
+            f"总资金：{yuan(portfolio.get('total_capital'))}；"
+            f"现金：{yuan(portfolio.get('cash'))}；"
+            f"单只ETF上限：{fmt((portfolio.get('max_single_weight') or 0) * 100, '%')}。"
+        )
+    else:
+        account_html = "未加载私有账户配置；本邮件不展示模板资金或仓位。"
     report_generated_at = (
         report.get("generated_at")
         or (report.get("metadata") or {}).get("generated_at")
@@ -4393,14 +4408,11 @@ def generate_html_email(report: Dict) -> str:
             </div>
             <div class="note" style="background:#f6f8fa; border-left-color:#57606a;">
                 <strong>账户配置</strong><br>
-                总资金：{yuan(report.get('portfolio', {}).get('total_capital'))}；
-                现金：{yuan(report.get('portfolio', {}).get('cash'))}；
-                单只ETF上限：{fmt((report.get('portfolio', {}).get('max_single_weight') or 0) * 100, '%')}。
+                {html.escape(account_html)}
             </div>
-            {capital_plan_html(report.get('portfolio', {}))}
-            {short_term_pilot_html(report.get('portfolio', {}))}
+            {capital_plan_html(portfolio)}
+            {short_term_pilot_html(portfolio)}
             {action_plan_html(report)}
-            {tomorrow_task_html(report)}
             <table>
                 <tr>
                     <th>标的</th>
