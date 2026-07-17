@@ -99,6 +99,7 @@ def build_scan_summary(payload: dict, scan: dict) -> dict:
         "gate_open": gate_open,
         "gate_reason": gate_reason,
         "candidates": candidates,
+        "actionable_candidates": (tiers.get("actionable") or [])[:3],
         "strong_industries": strong,
         "weak_industries": weak,
     }
@@ -155,7 +156,34 @@ def candidate_rows(items: list[dict], gate_open: bool) -> str:
     return "".join(rows)
 
 
-def build_html(payload: dict, scan: dict, summary: dict) -> str:
+def action_card_rows(items: list[dict], gate_open: bool) -> str:
+    if not gate_open:
+        return '<p style="color:#5d6b82">交易闸门关闭：不生成盘中买入动作卡。</p>'
+    if not items:
+        return '<p style="color:#5d6b82">闸门开放，但没有通过量价、流动性和主题过滤的标的。</p>'
+    max_capital = as_float(os.getenv("INTRADAY_ACTION_CARD_MAX_CAPITAL", "20000"), 20_000)
+    rows = []
+    for item in items[:3]:
+        price = as_float(item.get("price"))
+        shares = int(max_capital // price // 100 * 100) if price else 0
+        entry_low = price * 0.995
+        entry_high = price * 1.005
+        stop_loss = price * 0.97
+        take_profit_1 = price * 1.03
+        take_profit_2 = price * 1.05
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('code') or '-'))} {html.escape(str(item.get('name') or ''))}</td>"
+            f"<td>{html.escape(fmt_price(entry_low))}-{html.escape(fmt_price(entry_high))}</td>"
+            f"<td>{html.escape(fmt_price(take_profit_1))}/{html.escape(fmt_price(take_profit_2))}</td>"
+            f"<td>{html.escape(fmt_price(stop_loss))}</td>"
+            f"<td>最多 {html.escape(fmt_amount(max_capital))}<br>约 {shares} 股</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def build_html(payload: dict, scan: dict, summary: dict, intraday: bool = False) -> str:
     generated_at = str(payload.get("generated_at") or "-")
     status = payload.get("status") or {}
     gate_color = "#18794e" if summary["gate_open"] else "#b42318"
@@ -166,7 +194,7 @@ def build_html(payload: dict, scan: dict, summary: dict) -> str:
   <main style="max-width:760px;margin:0 auto;padding:24px">
     <section style="background:#fff;border:1px solid #d8dee8;border-radius:8px;padding:22px">
       <h1 style="margin:0;font-size:24px">Niki 投资决策工作台</h1>
-      <p style="color:#5d6b82">盘后全市场扫描 | {html.escape(generated_at)}</p>
+      <p style="color:#5d6b82">{'盘中动作卡扫描' if intraday else '盘后全市场扫描'} | {html.escape(generated_at)}</p>
       <div style="background:#eef5ff;border:1px solid #bdd3f4;padding:12px;border-radius:6px">
         <strong>使用顺序：</strong>先核对券商 App 的账户与可卖份额，再处理已有持仓；扫描报告用于建立次日观察池，不构成买入指令。
       </div>
@@ -182,6 +210,8 @@ def build_html(payload: dict, scan: dict, summary: dict) -> str:
       <h2 style="font-size:17px;margin-top:22px">3. 观察候选（最多 3 个）</h2>
       <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f9fc"><th style="text-align:left;padding:8px">标的</th><th style="text-align:left;padding:8px">行业</th><th style="text-align:right;padding:8px">涨跌幅</th><th style="text-align:left;padding:8px">处理</th></tr></thead><tbody>{candidate_rows(summary['candidates'], summary['gate_open'])}</tbody></table>
 
+      {'<h2 style="font-size:17px;margin-top:22px">盘中动作卡（最多 3 张）</h2><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f9fc"><th style="text-align:left;padding:8px">标的</th><th style="text-align:left;padding:8px">入场区</th><th style="text-align:left;padding:8px">止盈</th><th style="text-align:left;padding:8px">止损</th><th style="text-align:left;padding:8px">最大试错</th></tr></thead><tbody>' + action_card_rows(summary['actionable_candidates'], summary['gate_open']) + '</tbody></table>' if intraday else ''}
+
       <h2 style="font-size:17px;margin-top:22px">4. 交易闸门</h2>
       <div style="border-left:4px solid {gate_color};background:#f7f9fc;padding:12px"><strong style="color:{gate_color}">{gate_label}</strong><br>{html.escape(summary['gate_reason'])}<br><span style="color:#5d6b82">规则：全市场覆盖、上涨家数占优、核心指数止跌三项同时满足，才允许为候选生成次日人工复核计划。</span></div>
       <p style="margin-top:20px;color:#5d6b82;font-size:12px">数据路由：腾讯实时行情 -> 通达信日线 -> 腾讯前复权 K 线 -> AKShare。本邮件不包含账户、持仓或个人配置；不连接券商、不自动下单、不承诺收益。</p>
@@ -193,16 +223,17 @@ def build_html(payload: dict, scan: dict, summary: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Send a manual workbench market-scan email")
     parser.add_argument("--dry-run", action="store_true", help="Generate and validate the preview without SMTP")
+    parser.add_argument("--intraday", action="store_true", help="Include conditional intraday action cards")
     args = parser.parse_args()
 
     payload = snapshot(INDEX_CODES, bars=65)
     scan = run_broad_market_scan(load_digital_infra_watchlist())
     summary = build_scan_summary(payload, scan)
-    email_html = build_html(payload, scan, summary)
+    email_html = build_html(payload, scan, summary, intraday=args.intraday)
     if args.dry_run:
         print(
             f"dry_run=OK quotes={(payload.get('status') or {}).get('valid_quote_count', 0)}/{len(INDEX_CODES)} "
-            f"scan={scan.get('scanned_count', 0)}/{scan.get('min_rows_target', 0)} gate_open={summary['gate_open']} html_bytes={len(email_html.encode('utf-8'))}"
+            f"scan={scan.get('scanned_count', 0)}/{scan.get('min_rows_target', 0)} gate_open={summary['gate_open']} intraday={args.intraday} html_bytes={len(email_html.encode('utf-8'))}"
         )
         return 0
 
@@ -218,7 +249,8 @@ def main() -> int:
         smtp_server=(os.getenv("SMTP_SERVER") or "smtp.qq.com").strip(),
         smtp_port=int((os.getenv("SMTP_PORT") or "587").strip()),
     )
-    sent = notifier.send_html_alert(required["RECIPIENT_EMAIL"], f"Niki 决策工作台 | 盘后市场扫描 | {now}", email_html)
+    label = "盘中动作卡" if args.intraday else "盘后市场扫描"
+    sent = notifier.send_html_alert(required["RECIPIENT_EMAIL"], f"Niki 决策工作台 | {label} | {now}", email_html)
     if not sent:
         raise SystemExit("SMTP did not accept the market-scan email")
     print("market_scan_email=sent")
