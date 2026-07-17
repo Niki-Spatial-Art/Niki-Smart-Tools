@@ -1132,7 +1132,9 @@ def build_backtest_panel(backtest: dict) -> str:
 
 
 def build_holdings_table(broker: dict) -> str:
-    positions = [p for p in (latest_snapshot(broker).get("positions_visible") or []) if as_float(p.get("shares")) > 0]
+    snap = latest_snapshot(broker)
+    freshness, _ = snapshot_age_label(snap)
+    positions = [p for p in (snap.get("positions_visible") or []) if as_float(p.get("shares")) > 0]
     rows = []
     for pos in positions:
         code = str(pos.get("code") or "")
@@ -1157,7 +1159,7 @@ def build_holdings_table(broker: dict) -> str:
       </table>
     </div>
     """
-    return section("真实持仓", "文字改成高对比表格，588000/600021重点高亮", table, "holdings")
+    return section("券商快照明细", f"快照 {snap.get('snapshot_time') or '-'}（{freshness}）；请以券商 App 当前持仓为准", table, "holdings-detail")
 
 
 def build_ifind_use_plan(usage: dict, probe: dict) -> str:
@@ -1728,41 +1730,141 @@ def build_daily_maintenance_records() -> str:
     return section("每日维护记录", "最近盘后复盘、系统更新和明日修正规则", body, "maintenance")
 
 
+def snapshot_age_label(snapshot: dict) -> tuple[str, str]:
+    """Return a conservative freshness label for the manually imported broker snapshot."""
+    raw = str(snapshot.get("snapshot_time") or "")
+    if not raw:
+        return "未导入", "danger"
+    try:
+        age = datetime.now() - datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        if age.total_seconds() <= 30 * 60:
+            return "新鲜", "ok"
+        if age.total_seconds() <= 24 * 60 * 60:
+            return "今日较早", "warn"
+    except ValueError:
+        pass
+    return "需人工确认", "warn"
+
+
+def build_decision_home(report: dict, broker: dict, route: dict) -> str:
+    """The primary screen: account safety and existing positions before research."""
+    snap = latest_snapshot(broker)
+    assets = as_float(snap.get("total_assets") or snap.get("broker_total_capital"))
+    cash = as_float(snap.get("available_cash") or snap.get("cash"))
+    market_value = as_float(snap.get("securities_market_value"))
+    cash_ratio = cash / assets if assets else 0.0
+    freshness, freshness_tone = snapshot_age_label(snap)
+    route_status = route.get("status") or {}
+    route_available = bool(route.get("available")) or as_float(route_status.get("valid_quote_count")) > 0
+    route_note = (
+        f"报价 {route_status.get('valid_quote_count', 0)}/{len(route.get('requested_codes') or [])}；"
+        f"日线 {route_status.get('valid_history_count', 0)}/{len(route.get('requested_codes') or [])}。"
+        if route_available else "本地行情快照尚未生成；不新增风险。"
+    )
+    gate = ((report.get("action_stack") or {}).get("new_entry_gate") or {})
+    gate_closed = bool(gate.get("blocked")) or is_stale(report) or not route_available
+    action = "持仓优先，不新增风险" if gate_closed else "仅人工复核后观察"
+    cards = [
+        card("账户快照", fmt_money(assets, 2), f"{freshness}；{snap.get('snapshot_time') or '-'}。", freshness_tone),
+        card("现金 / 权益", f"{pct_from_ratio(cash_ratio)} / {pct_from_ratio(1 - cash_ratio)}", f"现金 {fmt_money(cash, 0)}；市值 {fmt_money(market_value, 0)}。", "ok"),
+        card("累计参考盈亏", fmt_money(snap.get("reference_profit"), 2), f"当日 {fmt_money(snap.get('daily_profit'), 2)}。", "ok" if as_float(snap.get("reference_profit")) >= 0 else "warn"),
+        card("今日纪律", action, str(gate.get("reason") or "账户、持仓、行情三者一致后再做决定。"), "danger" if gate_closed else "warn"),
+        card("行情快照", "可复核" if route_available else "待刷新", route_note, "ok" if route_available else "warn"),
+    ]
+    return f"""
+    <section class="hero">
+      <div>
+        <h1>Niki 投资决策工作台</h1>
+        <p>先管理真实账户，再看市场；观察不是买入指令，消息面只进入盘后复盘。</p>
+      </div>
+      <div class="hero-actions">
+        <button id="refresh-data" type="button">刷新行情快照</button>
+        <a href="/api/status" target="_blank">状态 JSON</a>
+      </div>
+    </section>
+    {metric_grid(cards, "top-grid")}
+    <div class="decision-note"><strong>当前工作顺序：</strong>1. 核对券商快照和可卖份额；2. 只处理已有持仓的风险或利润；3. 收盘后再用消息、公告、龙虎榜和资金流更新观察池。月度收益目标不能反过来制造交易。</div>
+    """
+
+
+def build_holding_focus(broker: dict) -> str:
+    snap = latest_snapshot(broker)
+    freshness, _ = snapshot_age_label(snap)
+    positions = [pos for pos in (snap.get("positions_visible") or []) if as_float(pos.get("shares")) > 0]
+    positions.sort(key=lambda pos: (classify_holding_action(pos)[3], -abs(as_float(pos.get("reference_profit")))))
+    cards = []
+    for pos in positions:
+        action, tone, headline, _ = classify_holding_action(pos)
+        cards.append(status_source_card(
+            f"{pos.get('code') or '-'} {pos.get('name') or ''}",
+            action,
+            f"持仓 {fmt_number(pos.get('shares'), 0)} | 可卖 {fmt_number(pos.get('available'), 0)} | 现价 {fmt_price(pos.get('price'))}",
+            headline,
+            f"当日 {fmt_money(pos.get('daily_profit'), 2)}；参考 {fmt_money(pos.get('reference_profit'), 2)}。{str(pos.get('tomorrow_rule') or '未设置处理线')}",
+            tone,
+        ))
+    notice = ""
+    if freshness != "新鲜":
+        notice = (
+            '<div class="decision-note"><strong>快照已降级：</strong>'
+            f'券商快照时间为 {esc(snap.get("snapshot_time") or "-")}（{esc(freshness)}）。'
+            '这里的持仓只用于与券商 App 核对，不能据此买卖；成交后请先导入新的账户总览。</div>'
+        )
+    body = notice + (source_grid(cards, "wide") if cards else '<div class="empty">尚未导入有效持仓快照；不要根据候选池新开仓。</div>')
+    return section("快照持仓处理", "按可卖份额排序；默认不补仓、不做盘中临时切换", body, "holdings")
+
+
+def build_market_observation(report: dict, route: dict) -> str:
+    policy = report.get("market_structure_policy") or {}
+    indices = route.get("market_indices") or []
+    index_cards = [
+        source_card(
+            f"{item.get('code') or ''} {item.get('name') or ''}",
+            f"现价 {fmt_price(item.get('price'))}",
+            f"涨跌 {pct(item.get('change_pct'))}",
+            "只用于判断环境强弱，不生成买入动作。",
+            "danger" if as_float(item.get("change_pct")) < -1 else "",
+        )
+        for item in indices[:6]
+    ]
+    preferred = " / ".join(policy.get("preferred_industries") or []) or "等待盘后形成观察主题"
+    avoided = " / ".join(policy.get("avoid_industries") or []) or "不追涨、不因消息临时换仓"
+    body = (
+        '<div class="decision-note"><strong>市场规则：</strong>大盘与风格没有确认时，候选池只保留观察资格。上涨、龙虎榜、热榜或一条快讯都不足以单独成为开仓理由。</div>'
+        + source_grid(index_cards)
+        + source_grid([
+            source_card("观察主题", "盘后更新", preferred, "需要行业共振、位置和风险线同时满足。"),
+            source_card("暂不参与", "风险过滤", avoided, "先把已有仓位和交易频率控制住。", "warn"),
+        ])
+    )
+    return section("市场与观察", "行情只回答环境问题；候选池不在盘中推送买入", body, "market")
+
+
+def build_research_sources(route: dict) -> str:
+    route_names = " -> ".join(route.get("route") or []) or "腾讯实时行情 -> 通达信 K 线 -> 腾讯前复权 K 线 -> AKShare"
+    cards = [
+        source_card("行情主路由", "本地默认", route_names, "刷新仅拉取行情和 K 线；失败时降级，不阻塞持仓复核。", "ok"),
+        source_card("a-stock-data 能力", "按需研究", "公告、资金流、龙虎榜、行业、新闻只服务于盘后复盘与观察池。", "不直接成为盘中买入按钮。", "ok"),
+        source_card("星耀", "可选本地增强", "保留探针与研究脚本，不作为主报价或云端依赖。", "连接失败自动忽略；不进入首页刷新链。", "warn"),
+        source_card("iFind", "默认关闭", "保留适配接口，未来需要时用于公告、基础信息的交叉校验。", "当前不自动调用，也不影响工作台。", "warn"),
+        source_card("期权", "研究归档", "保留仿真代码和历史数据接口，不展示期权链或生成实盘提示。", "当前账户目标应先验证现货/ETF纪律，期权不进入日常流程。", "warn"),
+    ]
+    return section("数据与研究边界", "少而稳定的主路由；高噪声能力只在盘后按需使用", source_grid(cards), "research")
+
+
 def build_html() -> str:
     report = read_json(REPORT)
     broker = read_broker_snapshot()
-    journal = read_csv(JOURNAL)
-    eastmoney = read_json(EASTMONEY_PROBE)
-    ifind_probe = read_json(IFIND_PROBE)
-    ifind_sample = read_json(latest_ifind_sample_path())
-    clean_radar = read_json(latest_ifind_clean_radar_path())
-    ifind_usage = read_json(IFIND_USAGE)
-    xingyao = read_json(XINGYAO)
-    option_chain = read_json(OPTION_CHAIN)
-    option_surface = read_json(OPTION_SURFACE)
-    research_manifest = read_json(XINGYAO_STORE_MANIFEST)
-    xingyao_alerts = read_json(XINGYAO_INTRADAY_ALERTS)
-    yuheng = read_json(YUHENG)
-    backtest = read_json(latest_backtest_path())
-    post_close = read_json(POST_CLOSE)
-    profit_targets = read_json(PROFIT_TARGETS)
-    meta = report.get("metadata") or {}
-    title = meta.get("subject") or "本地交易工作台"
+    route = read_json(A_STOCK_ROUTE)
+    title = "Niki 投资决策工作台"
     html_body = f"""
-    {build_top_sync(report, broker, ifind_probe, ifind_sample, clean_radar)}
-    {build_new_entry_gate(report)}
-    {build_intraday_brief(report, broker, clean_radar, option_chain)}
-    {build_market_structure(report)}
-    {build_etf_radar(report)}
-    {build_action_cards(report, broker, post_close)}
-    {build_xingyao_intraday_panel(xingyao_alerts, research_manifest)}
-    {build_tactical_cash(report)}
+    {build_decision_home(report, broker, route)}
+    {build_holding_focus(broker)}
     {build_holdings_table(broker)}
-    {build_ifind_clean_panel(clean_radar, backtest)}
-    {build_interface_row(report, broker, eastmoney, ifind_probe, ifind_sample, xingyao, yuheng)}
-    {build_options(report, xingyao, yuheng, option_chain, option_surface, research_manifest)}
+    {build_market_observation(report, route)}
+    {build_research_sources(route)}
     {build_daily_maintenance_records()}
-    <footer>数据文件：{esc(REPORT)} / {esc(REPORT_MD)} / {esc(JOURNAL)}。本页仅用于本地模拟、纪律提醒和复盘，不连接真实券商、不自动下单。</footer>
+    <footer>本页只读取本地账户快照与公开行情快照，用于纪律提醒和复盘；不连接券商、不自动下单、不承诺收益。</footer>
     """
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -1774,17 +1876,10 @@ def build_html() -> str:
 </head>
 <body>
   <nav>
-    <strong>星耀A股工作台</strong>
-    <a href="#intraday">盘中主屏</a>
-    <a href="#structure">市场结构</a>
-    <a href="#etf">ETF</a>
-    <a href="#cards">动作卡</a>
-    <a href="#xingyao-research">星耀研究</a>
-    <a href="#tactical-cash">现金调度</a>
+    <strong>Niki 决策工作台</strong>
     <a href="#holdings">持仓</a>
-    <a href="#clean-radar">清洁雷达</a>
-    <a href="#interfaces">接口</a>
-    <a href="#options">期权研究</a>
+    <a href="#market">市场</a>
+    <a href="#research">数据与研究</a>
     <a href="#maintenance">维护</a>
   </nav>
   <main>{html_body}</main>
@@ -1902,7 +1997,7 @@ def script() -> str:
       } finally {
         setTimeout(() => {
           button.disabled = false;
-          button.textContent = "刷新雷达/接口";
+          button.textContent = "刷新行情快照";
         }, 5000);
       }
     });
@@ -1919,17 +2014,8 @@ def refresh_status() -> dict:
         "refresh_running": running,
         "refresh_started_at": REFRESH_STARTED_AT,
         "report_mtime": file_time(REPORT),
-        "clean_radar_mtime": file_time(latest_ifind_clean_radar_path()),
         "broker_snapshot_time": snap.get("snapshot_time") or "-",
-        "eastmoney_probe_mtime": file_time(EASTMONEY_PROBE),
-        "ifind_probe_mtime": file_time(IFIND_PROBE),
-        "ifind_sample_mtime": file_time(latest_ifind_sample_path()),
-        "xingyao_probe_mtime": file_time(XINGYAO),
-        "option_chain_mtime": file_time(OPTION_CHAIN),
-        "option_surface_mtime": file_time(OPTION_SURFACE),
-        "xingyao_store_manifest_mtime": file_time(XINGYAO_STORE_MANIFEST),
-        "xingyao_intraday_alerts_mtime": file_time(XINGYAO_INTRADAY_ALERTS),
-        "yuheng_probe_mtime": file_time(YUHENG),
+        "a_stock_route_mtime": file_time(A_STOCK_ROUTE),
     }
 
 
@@ -1940,19 +2026,9 @@ def start_refresh() -> dict:
             return refresh_status()
         refresh_code = (
             "import os, subprocess, sys; "
-            "os.environ['MONITOR_SEND_EMAIL']='false'; "
             "os.environ['PYTHONIOENCODING']='utf-8'; "
             "steps=["
-            "('ifind quick20 before',[sys.executable,'tools/ifind_http_probe.py','--quick20'],90),"
-            "('yuheng probe',[sys.executable,'tools/yuheng_probe.py'],60),"
-            "('xingyao probe',[sys.executable,'tools/xingyao_data_probe.py'],60),"
-            "('xingyao option chain',[sys.executable,'tools/xingyao_option_analytics.py','--expiry-limit','2','--strikes-each-side','2'],150),"
-            "('xingyao option surface',[sys.executable,'tools/xingyao_option_surface.py'],60),"
-            "('xingyao research store',[sys.executable,'tools/xingyao_research_store.py','--fetch-timeout','20'],90),"
-            "('xingyao store query',[sys.executable,'tools/xingyao_duck_query.py','--table','option_chain_latest','--code','510300','--limit','8'],60),"
-            "('xingyao intraday alerts',[sys.executable,'tools/xingyao_intraday_alerts.py'],60),"
-            "('ifind clean radar',[sys.executable,'tools/ifind_clean_radar.py'],180),"
-            "('ifind full probe',[sys.executable,'tools/ifind_http_probe.py','--all','--wencai'],180)"
+            "('a-share quote and K-line snapshot',[sys.executable,'tools/a_stock_radar_snapshot.py'],120)"
             "]; "
             "\nfor name, cmd, timeout in steps:\n"
             "    print(f'=== {name} start ===', flush=True)\n"

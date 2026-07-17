@@ -1,19 +1,19 @@
-name: ETF Strategy Monitor
+name: A-share Market Watch
 
 on:
   workflow_dispatch:
   schedule:
-    # GitHub cron uses UTC.
-    # Beijing time: 09:10, 09:45, 11:35, 14:50, 21:30 on weekdays.
+    # GitHub cron uses UTC. Beijing 09:10 and 15:20 on weekdays.
     - cron: '10 1 * * 1-5'
-    - cron: '45 1 * * 1-5'
-    - cron: '35 3 * * 1-5'
-    - cron: '50 6 * * 1-5'
-    - cron: '30 13 * * 1-5'
+    - cron: '20 7 * * 1-5'
+
+permissions:
+  contents: read
 
 jobs:
-  monitor:
+  market-watch:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -22,23 +22,18 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -r requirements-a-stock.txt
 
-      - run: python monitor.py
-        env:
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-          RATE_DIFF_THRESHOLD: 0.15
-          AI_ENABLED: ${{ secrets.AI_ENABLED }}
-          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
-          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          XINGYAO_ENABLED: ${{ secrets.XINGYAO_ENABLED }}
-          XINGYAO_USER: ${{ secrets.XINGYAO_USER }}
-          XINGYAO_PASSWORD: ${{ secrets.XINGYAO_PASSWORD }}
-          XINGYAO_HOST: ${{ secrets.XINGYAO_HOST }}
-          XINGYAO_PORT: ${{ secrets.XINGYAO_PORT }}
-          XINGYAO_SDK_PATHS: ${{ secrets.XINGYAO_SDK_PATHS }}
+      - name: Create public market snapshot
+        run: >-
+          python tools/a_stock_radar_snapshot.py
+          --codes 510300,510500,512100,512880,588000,518880
+          --output data/a_stock_market_watch.json
 
+      - name: Upload market snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-share-market-watch
+          path: data/a_stock_market_watch.json
+          if-no-files-found: error
+          retention-days: 7
