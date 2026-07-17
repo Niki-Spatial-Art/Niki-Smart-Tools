@@ -94,8 +94,8 @@ def main() -> int:
     notifier = EmailNotifier(
         sender_email=required["SENDER_EMAIL"],
         sender_password=required["SENDER_PASSWORD"],
-        smtp_server=os.getenv("SMTP_SERVER", "smtp.qq.com"),
-        smtp_port=int(os.getenv("SMTP_PORT", "587")),
+        smtp_server=(os.getenv("SMTP_SERVER") or "smtp.qq.com").strip(),
+        smtp_port=int((os.getenv("SMTP_PORT") or "587").strip()),
     )
     sent = notifier.send_html_alert(required["RECIPIENT_EMAIL"], f"Niki 决策工作台 | 邮件预览 | {now}", email_html)
     if not sent:
