@@ -2,11 +2,6 @@ name: Intraday Action Card Scan
 
 on:
   workflow_dispatch:
-  schedule:
-    # GitHub cron uses UTC. Beijing time: 09:45, 10:45, 14:20 on weekdays.
-    - cron: '45 1 * * 1-5'
-    - cron: '45 2 * * 1-5'
-    - cron: '20 6 * * 1-5'
 
 permissions:
   contents: read

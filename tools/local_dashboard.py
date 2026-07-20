@@ -163,7 +163,10 @@ def split_lines(text: str, limit: int | None = None) -> list[str]:
 def latest_snapshot(payload: dict) -> dict:
     rows = payload.get("snapshots") if isinstance(payload, dict) else None
     if rows:
-        return rows[-1]
+        valid_rows = [row for row in rows if isinstance(row, dict)]
+        if valid_rows:
+            # Imports can be newest-first or oldest-first; timestamps are authoritative.
+            return max(valid_rows, key=lambda row: str(row.get("snapshot_time") or ""))
     return payload if isinstance(payload, dict) else {}
 
 
