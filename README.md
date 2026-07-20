@@ -45,6 +45,8 @@ $env:A_STOCK_PYTHON = 'C:\path\to\python.exe'
 
 `A-share Market Watch` 只生成公共市场快照工件。它不读取券商账户、私有配置、星耀凭据或期权数据。
 
+本地工作台可选地读取 `data/trade_journal.local.csv`。它只记录你手动确认的成交，并与最新券商快照对照剩余份额；该文件被 Git 忽略，不会发送到 GitHub 或任何云端邮件。
+
 ## 安全边界
 
 - 不连接券商，不自动下单。

@@ -30,6 +30,7 @@ REPORT = ROOT / "reports" / "latest.json"
 REPORT_MD = ROOT / "reports" / "latest.md"
 IFIND_CLEAN_DIR = ROOT / "reports" / "ifind_clean"
 JOURNAL = ROOT / "data" / "paper_trade_journal.csv"
+REAL_TRADE_JOURNAL = ROOT / "data" / "trade_journal.local.csv"
 OPTION_JOURNAL = ROOT / "data" / "option_sim_journal.csv"
 BROKER = ROOT / "data" / "broker_account_snapshots.local.json"
 BROKER_FALLBACK = ROOT / "data" / "broker_account_snapshots.json"
@@ -83,6 +84,11 @@ def read_csv(path: Path) -> list[dict[str, str]]:
             return list(csv.DictReader(handle))
     except Exception:
         return []
+
+
+def latest_real_trade() -> dict[str, str]:
+    rows = [row for row in read_csv(REAL_TRADE_JOURNAL) if str(row.get("trade_time") or "").strip()]
+    return max(rows, key=lambda row: str(row.get("trade_time") or "")) if rows else {}
 
 
 def file_time(path: Path) -> str:
@@ -179,6 +185,28 @@ def broker_positions(broker: dict) -> list[dict]:
         pos for pos in (latest_snapshot(broker).get("positions_visible") or [])
         if as_float(pos.get("shares")) > 0
     ]
+
+
+def latest_execution_note(broker: dict) -> str:
+    trade = latest_real_trade()
+    if not trade:
+        return '<div class="decision-note"><strong>本地成交联动：</strong>尚未记录真实成交；先录入成交与券商快照，再执行持仓建议。</div>'
+    code = str(trade.get("code") or "-")
+    held = next((item for item in broker_positions(broker) if str(item.get("code") or "") == code), {})
+    remaining = fmt_number(held.get("shares"), 0) if held else "0"
+    price = fmt_price(trade.get("price"))
+    shares = fmt_number(trade.get("shares"), 0)
+    gross = fmt_money(trade.get("gross_amount"), 2)
+    side = "卖出" if str(trade.get("side") or "").upper() == "SELL" else str(trade.get("side") or "成交")
+    snapshot_time = latest_snapshot(broker).get("snapshot_time") or "-"
+    return (
+        '<div class="decision-note"><strong>本地成交联动：</strong>'
+        f'{esc(trade.get("trade_time"))} 已确认{esc(side)} {esc(code)} {esc(shares)} 份，'
+        f'成交价 {esc(price)}，金额约 {esc(gross)}。'
+        f'券商快照 {esc(snapshot_time)} 显示剩余 {esc(remaining)} 份。'
+        '该记录只保存在本机，用于持仓复核；不会上传或自动下单。'
+        '</div>'
+    )
 
 
 def clean_items_by_code(clean_radar: dict) -> dict[str, dict]:
@@ -324,6 +352,7 @@ def build_intraday_brief(report: dict, broker: dict, clean_radar: dict, option_c
     )
     body = (
         metric_grid(account_cards, "top-grid")
+        + latest_execution_note(broker)
         + '<div class="decision-note"><strong>午间结论：</strong>当前实盘核心是 5 个ETF旧仓；A股自选只看强弱，不追跌后反抽；现金多不是买入理由。期权继续只做研究和风控参考。</div>'
         + "<h3>ETF持仓动作</h3>"
         + (source_grid(etf_cards, "wide") if etf_cards else '<div class="empty">没有ETF持仓。</div>')
@@ -1786,6 +1815,7 @@ def build_decision_home(report: dict, broker: dict, route: dict) -> str:
       </div>
     </section>
     {metric_grid(cards, "top-grid")}
+    {latest_execution_note(broker)}
     <div class="decision-note"><strong>当前工作顺序：</strong>1. 核对券商快照和可卖份额；2. 只处理已有持仓的风险或利润；3. 收盘后再用消息、公告、龙虎榜和资金流更新观察池。月度收益目标不能反过来制造交易。</div>
     """
 
@@ -1986,7 +2016,7 @@ def script() -> str:
       try {
         const res = await fetch("/api/status", {cache: "no-store"});
         const data = await res.json();
-        note.textContent = `实时同步：latest.json ${data.report_mtime}；券商快照 ${data.broker_snapshot_time}；刷新任务 ${data.refresh_running ? "运行中" : "空闲"}`;
+        note.textContent = `实时同步：latest.json ${data.report_mtime}；券商快照 ${data.broker_snapshot_time}；最近成交 ${data.latest_real_trade_time || "-"}；刷新任务 ${data.refresh_running ? "运行中" : "空闲"}`;
       } catch (err) {
         note.textContent = "实时同步：状态读取失败，请看命令行日志。";
       }
@@ -2018,6 +2048,7 @@ def refresh_status() -> dict:
         "refresh_started_at": REFRESH_STARTED_AT,
         "report_mtime": file_time(REPORT),
         "broker_snapshot_time": snap.get("snapshot_time") or "-",
+        "latest_real_trade_time": (latest_real_trade().get("trade_time") or "-"),
         "a_stock_route_mtime": file_time(A_STOCK_ROUTE),
     }
 

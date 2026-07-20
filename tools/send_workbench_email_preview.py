@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -21,6 +22,7 @@ from monitor import broad_market_tiers, load_digital_infra_watchlist, run_broad_
 
 INDEX_CODES = ["510300", "512100", "512880", "588000", "518880"]
 CORE_INDEX_CODES = ["510300", "512100", "588000"]
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def as_float(value: object, default: float = 0.0) -> float:
@@ -51,6 +53,20 @@ def fmt_amount(value: object) -> str:
     if amount >= 10_000:
         return f"{amount / 10_000:.0f} 万"
     return f"{amount:.0f}"
+
+
+def fmt_beijing_time(value: object) -> str:
+    """Render cloud-generated timestamps consistently for the local user."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "-"
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=BEIJING_TZ)
+    return f"{parsed.astimezone(BEIJING_TZ):%Y-%m-%d %H:%M:%S} 北京时间"
 
 
 def index_stop_state(payload: dict) -> tuple[bool, int]:
@@ -184,7 +200,7 @@ def action_card_rows(items: list[dict], gate_open: bool) -> str:
 
 
 def build_html(payload: dict, scan: dict, summary: dict, intraday: bool = False) -> str:
-    generated_at = str(payload.get("generated_at") or "-")
+    generated_at = fmt_beijing_time(payload.get("generated_at"))
     status = payload.get("status") or {}
     gate_color = "#18794e" if summary["gate_open"] else "#b42318"
     gate_label = "允许进入次日人工复核" if summary["gate_open"] else "停止新增风险"
@@ -242,7 +258,7 @@ def main() -> int:
     if missing:
         raise SystemExit("Missing required email configuration: " + ", ".join(missing))
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M 北京时间")
     notifier = EmailNotifier(
         sender_email=required["SENDER_EMAIL"],
         sender_password=required["SENDER_PASSWORD"],
