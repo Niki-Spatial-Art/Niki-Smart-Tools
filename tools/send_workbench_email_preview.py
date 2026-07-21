@@ -41,7 +41,8 @@ def fmt_price(value: object) -> str:
 
 def fmt_pct(value: object) -> str:
     try:
-        return f"{float(value):+.2f}%"
+        number = float(value)
+        return "0.00%" if abs(number) < 0.005 else f"{number:+.2f}%"
     except (TypeError, ValueError):
         return "-"
 
@@ -126,7 +127,9 @@ def index_rows(payload: dict) -> str:
     for code in INDEX_CODES:
         quote = (payload.get("quotes") or {}).get(code) or {}
         change = quote.get("change_pct")
-        color = "#b42318" if as_float(change) < 0 else "#18794e"
+        change_value = as_float(change)
+        # Follow the conventional A-share palette: red up, green down, gray flat.
+        color = "#b42318" if change_value > 0 else "#18794e" if change_value < 0 else "#5d6b82"
         ma20 = quote.get("ma20")
         state = "MA20 上方" if as_float(quote.get("price")) >= as_float(ma20) and ma20 else "MA20 下方"
         rows.append(
@@ -215,8 +218,8 @@ def build_html(payload: dict, scan: dict, summary: dict, intraday: bool = False)
         <strong>使用顺序：</strong>先核对券商 App 的账户与可卖份额，再处理已有持仓；扫描报告用于建立次日观察池，不构成买入指令。
       </div>
 
-      <h2 style="font-size:17px;margin-top:22px">1. 大盘与止跌</h2>
-      <p style="color:#5d6b82">行情快照：报价 {status.get('valid_quote_count', 0)}/{len(INDEX_CODES)}；日线 {status.get('valid_history_count', 0)}/{len(INDEX_CODES)}。核心指数 MA20 上方且当日非跌的数量：{summary['recovered_count']}/{len(CORE_INDEX_CODES)}。</p>
+      <h2 style="font-size:17px;margin-top:22px">1. 大盘与止跌（市场代理，非持仓）</h2>
+      <p style="color:#5d6b82">行情快照：报价 {status.get('valid_quote_count', 0)}/{len(INDEX_CODES)}；日线 {status.get('valid_history_count', 0)}/{len(INDEX_CODES)}。涨跌幅为相对昨收的日内变化；这 5 只 ETF 只用于市场风控，并不等于你的账户持仓。核心指数 MA20 上方且当日非跌的数量：{summary['recovered_count']}/{len(CORE_INDEX_CODES)}。</p>
       <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f9fc"><th style="text-align:left;padding:8px">代码</th><th style="text-align:left;padding:8px">标的</th><th style="text-align:right;padding:8px">价格</th><th style="text-align:right;padding:8px">涨跌幅</th><th style="text-align:right;padding:8px">趋势</th></tr></thead><tbody>{index_rows(payload)}</tbody></table>
 
       <h2 style="font-size:17px;margin-top:22px">2. 风格与行业</h2>
