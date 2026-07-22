@@ -1,0 +1,38 @@
+{
+  "updated_at": "YYYY-MM-DD HH:MM:SS",
+  "cards": [
+    {
+      "id": "theme-YYYYMMDD-code",
+      "status": "research",
+      "code": "000000",
+      "name": "示例标的，必须替换",
+      "theme": "算力电力设备 / PCB材料 / 光模块CPO 三选一",
+      "horizon": "5-20个交易日",
+      "sources": [
+        {
+          "title": "原始公告、业绩材料、行业价格或订单证据标题",
+          "url": "https://example.com/source",
+          "published_at": "YYYY-MM-DD HH:MM:SS"
+        }
+      ],
+      "supply_demand_thesis": "供给为何受限、需求为何改善，以及该变化的可验证证据。",
+      "market_mispricing": "市场目前可能忽略了什么；不能只重复公开利好。",
+      "counter_evidence": "什么事实会削弱这条逻辑，例如扩产、价格回落、订单取消或同业走弱。",
+      "trigger": "只有什么价格行为、公告/订单和产业链共振同时出现时才提交人工复核。",
+      "invalidation": "什么价格、经营或产业链变化出现即放弃，不用补仓解释。",
+      "data_checks": {
+        "price_verified": false,
+        "ma20_verified": false,
+        "liquidity_verified": false,
+        "position_verified": false
+      },
+      "logic_checks": {
+        "market_regime_confirmed": false,
+        "sector_resonance_confirmed": false,
+        "not_chasing": false,
+        "catalyst_verified": false
+      },
+      "researcher_note": "AI 可以协助整理，最终由人工填写和确认。"
+    }
+  ]
+}

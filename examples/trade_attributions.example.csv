@@ -1,0 +1,2 @@
+trade_time,code,market_state,decision_context,positioning,execution_quality,outcome,primary_cause,secondary_cause,next_rule,reviewed_at
+YYYY-MM-DD HH:MM:SS,000000,市场状态与闸门,当时为何买入或卖出,仓位是否符合预算,是否追高/是否按计划,结果与持有期,market|selection|entry|sizing|exit|discipline,可选次因,下一次可执行规则,YYYY-MM-DD HH:MM:SS

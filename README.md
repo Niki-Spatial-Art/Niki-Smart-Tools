@@ -57,5 +57,6 @@ $env:A_STOCK_PYTHON = 'C:\path\to\python.exe'
 ## 文档
 
 - [投资决策工作台说明](docs/investment_workbench.md)
+- [候选证据与成交归因闭环](docs/evidence_and_attribution_workflow.md)
 - [项目记忆与运行约定](CODEX_PROJECT_MEMORY.md)
 - [A 股数据依赖](requirements-a-stock.txt)

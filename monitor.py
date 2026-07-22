@@ -2289,6 +2289,76 @@ def short_term_pilot_policy(portfolio: Dict) -> Dict:
     return (portfolio.get("capital_plan") or {}).get("short_term_pilot") or {}
 
 
+def risk_budget_policy(portfolio: Dict) -> Dict:
+    """Return account-level limits that sit above candidate selection."""
+    plan = portfolio.get("capital_plan") or {}
+    raw = plan.get("risk_budget") or portfolio.get("risk_budget") or {}
+    total_capital = max(safe_float(portfolio.get("total_capital")) or 0, 0)
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "single_trial_risk_pct": safe_float(raw.get("single_trial_risk_pct")) or 0.005,
+        "max_trial_capital_pct": safe_float(raw.get("max_trial_capital_pct")) or 0.05,
+        "max_cumulative_trial_capital_pct": safe_float(raw.get("max_cumulative_trial_capital_pct")) or 0.15,
+        "daily_loss_stop": abs(safe_float(raw.get("daily_loss_stop")) or safe_float(portfolio.get("daily_loss_hard_stop")) or total_capital * 0.01),
+        "monthly_drawdown_stop_pct": safe_float(raw.get("monthly_drawdown_stop_pct")) or 0.03,
+        "profit_target_note": raw.get("profit_target_note") or "收益目标不触发买入；风险预算只定义允许承受的最大损失。",
+    }
+
+
+def risk_budget_dashboard(report: Dict) -> Dict:
+    """Translate portfolio limits into a visible daily decision budget."""
+    portfolio = report.get("portfolio") or {}
+    policy = risk_budget_policy(portfolio)
+    total_capital = max(safe_float(portfolio.get("total_capital")) or 0, 0)
+    cash = max(safe_float(portfolio.get("cash")) or 0, 0)
+    daily_profit = safe_float(portfolio.get("daily_profit")) or 0
+    market_gate = new_entry_gate(report)
+    breadth = ((report.get("broad_market_scan") or {}).get("breadth") or {})
+    advancers = int(breadth.get("advancers") or 0)
+    decliners = int(breadth.get("decliners") or 0)
+    breadth_passed = advancers > decliners
+    single_trial_loss = total_capital * policy["single_trial_risk_pct"]
+    max_trial_capital = min(cash, total_capital * policy["max_trial_capital_pct"])
+    max_cumulative_trial_capital = min(cash, total_capital * policy["max_cumulative_trial_capital_pct"])
+    monthly_drawdown_stop = total_capital * policy["monthly_drawdown_stop_pct"]
+    daily_stop_hit = daily_profit <= -policy["daily_loss_stop"]
+    market_open = not market_gate.get("blocked") and breadth_passed
+    enabled = policy["enabled"] and not daily_stop_hit and market_open
+
+    if not policy["enabled"]:
+        status, label, reason = "DISABLED", "仅显示预算，不允许新增风险", "本地风险预算未启用。"
+    elif daily_stop_hit:
+        status, label = "DAILY_STOP", "当日停手"
+        reason = f"当日盈亏 {daily_profit:.0f} 元已触及日停手线 -{policy['daily_loss_stop']:.0f} 元。"
+    elif not breadth_passed:
+        status, label = "BREADTH_BLOCKED", "预算保留，市场宽度未通过"
+        reason = f"上涨 {advancers} 家、下跌 {decliners} 家；新增试错额度为 0。"
+    elif not market_open:
+        status, label = "MARKET_BLOCKED", "预算保留，市场闸门未开"
+        reason = market_gate.get("reason") or "市场条件未通过，新增试错额度为 0。"
+    else:
+        status, label, reason = "TRIAL_ALLOWED", "允许一笔试错", "市场与日风险闸门通过；仍需人工确认标的、入场和止损。"
+
+    return {
+        "status": status,
+        "label": label,
+        "reason": reason,
+        "total_capital": total_capital,
+        "cash": cash,
+        "daily_profit": daily_profit,
+        "single_trial_loss": single_trial_loss,
+        "max_trial_capital": max_trial_capital,
+        "max_cumulative_trial_capital": max_cumulative_trial_capital,
+        "daily_loss_stop": policy["daily_loss_stop"],
+        "monthly_drawdown_stop": monthly_drawdown_stop,
+        "today_trial_capital": max_trial_capital if enabled else 0,
+        "today_allowed_loss": single_trial_loss if enabled else 0,
+        "market_gate": market_gate,
+        "breadth_gate": {"passed": breadth_passed, "advancers": advancers, "decliners": decliners},
+        "profit_target_note": policy["profit_target_note"],
+    }
+
+
 def broad_market_coverage_gate(report: Dict) -> Dict:
     broad_scan = report.get("broad_market_scan") or {}
     if not broad_scan.get("enabled"):
@@ -3012,8 +3082,20 @@ def action_plan_markdown_lines(report: Dict) -> List[str]:
     option_do_cards = [item for item in option_cards if item["decision"] == "只仿真"]
     coverage_gate = new_entry_gate(report)
     cash_decision = tactical_cash_decision(report, stock_cards)
+    risk_budget = risk_budget_dashboard(report)
 
     lines = ["", "## 今日动作卡", ""]
+    lines.extend(
+        [
+            "### 风险预算优先",
+            "",
+            f"- 状态：{risk_budget['label']}；{risk_budget['reason']}",
+            f"- 单笔最大允许亏损：{yuan(risk_budget['today_allowed_loss'])}；本次最多试错资金：{yuan(risk_budget['today_trial_capital'])}；累计试错资金上限：{yuan(risk_budget['max_cumulative_trial_capital'])}。",
+            f"- 停手线：当日亏损 {yuan(risk_budget['daily_loss_stop'])}；月度回撤 {yuan(risk_budget['monthly_drawdown_stop'])}。",
+            f"- 纪律：{risk_budget['profit_target_note']}",
+            "",
+        ]
+    )
     lines.append(f"- 数据闸门：{coverage_gate.get('reason', '全市场覆盖状态未知。')}")
     lines.extend(
         [
@@ -3092,11 +3174,13 @@ def build_action_stack(report: Dict) -> Dict:
     option_radar = report.get("option_sim_radar", {})
     option_cards = option_beginner_cards(option_radar)
     cash_decision = tactical_cash_decision(report, stock_cards)
+    risk_budget = risk_budget_dashboard(report)
     return {
         "generated_at": report.get("generated_at"),
         "risk_gate": risk_gate,
         "stop_new_entries_gate": stop_gate,
         "tactical_cash_decision": cash_decision,
+        "risk_budget": risk_budget,
         "data_coverage_gate": broad_market_coverage_gate(report),
         "new_entry_gate": new_entry_gate(report),
         "broker_snapshot_gate": broker_snapshot_gate(portfolio),

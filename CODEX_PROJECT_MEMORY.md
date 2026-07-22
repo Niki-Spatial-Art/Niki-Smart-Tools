@@ -21,6 +21,8 @@ Niki Smart Tools is a local-first A-share/ETF research and decision-discipline w
 - `data/trade_journal.local.csv` is an optional ignored local ledger of user-confirmed fills. The dashboard reconciles its latest entry against the latest broker snapshot; it is never sent to GitHub or cloud email.
 - The local dashboard is named "Niki 投资决策工作台". Its default order is account snapshot -> holding risk -> market observation -> post-close research.
 - The dashboard must visibly downgrade stale broker snapshots; never treat an old screenshot as a current executable position.
+- The local-only `risk_budget` policy is rendered before holdings and candidates. It calculates a single-trial loss budget, trial-capital limit, cumulative trial-capital limit, and daily/monthly stop lines. Profit targets never open a trade; a stale broker snapshot or closed market gate sets the available trial amount to zero.
+- Candidate research now passes through `data/research_evidence.local.json`: original sources/time, supply-demand thesis, counter-evidence, trigger/invalidation, and separate data/logic checks are required before a card can be submitted for human review. `data/trade_attributions.local.csv` records market, selection, entry, sizing, exit, or discipline attribution for every locally confirmed fill.
 - Options are research/simulation only and do not appear in the daily dashboard flow. Xingyao is local optional research; iFind is off by default. Neither belongs in the default refresh path or GitHub Actions.
 - GitHub Actions only creates a public A-share market-snapshot artifact. It must not receive broker snapshots, Xingyao credentials, or private account data.
 

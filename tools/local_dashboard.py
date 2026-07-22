@@ -31,6 +31,8 @@ REPORT_MD = ROOT / "reports" / "latest.md"
 IFIND_CLEAN_DIR = ROOT / "reports" / "ifind_clean"
 JOURNAL = ROOT / "data" / "paper_trade_journal.csv"
 REAL_TRADE_JOURNAL = ROOT / "data" / "trade_journal.local.csv"
+TRADE_ATTRIBUTIONS = ROOT / "data" / "trade_attributions.local.csv"
+EVIDENCE_CARDS = ROOT / "data" / "research_evidence.local.json"
 OPTION_JOURNAL = ROOT / "data" / "option_sim_journal.csv"
 BROKER = ROOT / "data" / "broker_account_snapshots.local.json"
 BROKER_FALLBACK = ROOT / "data" / "broker_account_snapshots.json"
@@ -86,9 +88,24 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return []
 
 
+def read_evidence_cards() -> list[dict]:
+    """Read local-only candidate research cards without treating them as signals."""
+    payload = read_json(EVIDENCE_CARDS)
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        return [item for item in (payload.get("cards") or []) if isinstance(item, dict)]
+    return []
+
+
 def latest_real_trade() -> dict[str, str]:
     rows = [row for row in read_csv(REAL_TRADE_JOURNAL) if str(row.get("trade_time") or "").strip()]
     return max(rows, key=lambda row: str(row.get("trade_time") or "")) if rows else {}
+
+
+def trade_key(row: dict) -> str:
+    """Use the locally confirmed timestamp and code to join a fill to its review."""
+    return f"{str(row.get('trade_time') or '').strip()}|{str(row.get('code') or '').strip()}"
 
 
 def file_time(path: Path) -> str:
@@ -158,6 +175,67 @@ def pct(value) -> str:
 
 def pct_from_ratio(value) -> str:
     return pct(as_float(value) * 100)
+
+
+def flag(value) -> bool:
+    """Accept booleans and common local JSON spellings for review checklists."""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "通过", "已核对"}
+
+
+def evidence_assessment(item: dict) -> dict:
+    """Assess completeness only; a complete card is still not a buy instruction."""
+    sources = item.get("sources") or []
+    if isinstance(sources, dict):
+        sources = [sources]
+    if isinstance(sources, str):
+        sources = [{"title": sources}]
+    sources = [source for source in sources if isinstance(source, dict)]
+    valid_sources = [source for source in sources if source.get("title") or source.get("url")]
+    timed_sources = [source for source in valid_sources if source.get("published_at") or source.get("captured_at")]
+    data_checks = item.get("data_checks") or {}
+    logic_checks = item.get("logic_checks") or {}
+    required_data = {
+        "价格": "price_verified",
+        "均线": "ma20_verified",
+        "流动性": "liquidity_verified",
+        "持仓/可交易权限": "position_verified",
+    }
+    required_logic = {
+        "市场状态": "market_regime_confirmed",
+        "产业链共振": "sector_resonance_confirmed",
+        "非追高位置": "not_chasing",
+        "催化或基本面证据": "catalyst_verified",
+    }
+    missing = []
+    if not valid_sources:
+        missing.append("原始来源")
+    elif not timed_sources:
+        missing.append("来源时间")
+    for label, field in {
+        "供需/景气逻辑": "supply_demand_thesis",
+        "市场未定价点": "market_mispricing",
+        "反例": "counter_evidence",
+        "触发条件": "trigger",
+        "失效条件": "invalidation",
+    }.items():
+        if not str(item.get(field) or "").strip():
+            missing.append(label)
+    missing_data = [label for label, field in required_data.items() if not flag(data_checks.get(field))]
+    missing_logic = [label for label, field in required_logic.items() if not flag(logic_checks.get(field))]
+    missing.extend(f"数据:{label}" for label in missing_data)
+    missing.extend(f"逻辑:{label}" for label in missing_logic)
+    return {
+        "sources": valid_sources,
+        "data_passed": not missing_data,
+        "logic_passed": not missing_logic and all(
+            str(item.get(field) or "").strip()
+            for field in ("supply_demand_thesis", "market_mispricing", "counter_evidence", "trigger", "invalidation")
+        ) and bool(valid_sources) and bool(timed_sources),
+        "ready": not missing,
+        "missing": missing,
+    }
 
 
 def split_lines(text: str, limit: int | None = None) -> list[str]:
@@ -1116,6 +1194,39 @@ def build_tactical_cash(report: dict) -> str:
     return section("战术现金调度", "15万随时可进账户，但只按信号分批", metric_grid(cards) + note, "tactical-cash")
 
 
+def build_risk_budget(report: dict, broker: dict, route: dict) -> str:
+    budget = ((report.get("action_stack") or {}).get("risk_budget") or {})
+    if not budget:
+        return section("风险预算", "等待下一次雷达生成", '<div class="empty">先刷新雷达，生成单笔风险、试错额度和停手线。</div>', "risk-budget")
+    status = str(budget.get("status") or "")
+    freshness, _ = snapshot_age_label(latest_snapshot(broker))
+    route_status = route.get("status") or {}
+    route_available = bool(route.get("available")) or as_float(route_status.get("valid_quote_count")) > 0
+    executable = status == "TRIAL_ALLOWED" and freshness == "新鲜" and route_available
+    reason = str(budget.get("reason") or "")
+    if not executable:
+        if freshness != "新鲜":
+            reason = f"券商快照为{freshness}，先以券商 App 更新总览和可卖份额。"
+        elif not route_available:
+            reason = "本地行情快照未生成或不完整。"
+    label = str(budget.get("label") or "-") if executable else "额度归零，等待复核"
+    tone = "ok" if executable else ("danger" if status == "DAILY_STOP" else "warn")
+    today_allowed_loss = budget.get("today_allowed_loss") if executable else 0
+    today_trial_capital = budget.get("today_trial_capital") if executable else 0
+    cards = [
+        card("今日状态", label, reason, tone),
+        card("单笔最大亏损", fmt_money(today_allowed_loss, 0), f"完整风险预算 {fmt_money(budget.get('single_trial_loss'), 0)}；先算亏多少，再谈买多少。", tone),
+        card("本次试错额度", fmt_money(today_trial_capital, 0), f"累计试错上限 {fmt_money(budget.get('max_cumulative_trial_capital'), 0)}。", tone),
+        card("日停手线", fmt_money(budget.get("daily_loss_stop"), 0), f"月度回撤线 {fmt_money(budget.get('monthly_drawdown_stop'), 0)}。触线后不新增风险。", "warn"),
+    ]
+    note = (
+        '<div class="decision-note"><strong>预算规则：</strong>'
+        + esc(budget.get("profit_target_note") or "收益目标不触发买入。")
+        + " 券商快照、行情快照或市场闸门任一未通过时，本次试错额度自动归零；已有持仓只做风险复核，不被当成加仓指令。</div>"
+    )
+    return section("风险预算", "先定义可承受损失，再决定是否产生候选和动作卡", metric_grid(cards) + note, "risk-budget")
+
+
 def build_backtest_panel(backtest: dict) -> str:
     if not backtest or backtest.get("_error"):
         return section("iFind短线回测", "缺少回测文件", '<div class="empty">运行 python tools\\ifind_position_backtest.py --days 120 后再看。</div>', "backtest")
@@ -1794,13 +1905,21 @@ def build_decision_home(report: dict, broker: dict, route: dict) -> str:
         if route_available else "本地行情快照尚未生成；不新增风险。"
     )
     gate = ((report.get("action_stack") or {}).get("new_entry_gate") or {})
-    gate_closed = bool(gate.get("blocked")) or is_stale(report) or not route_available
+    gate_closed = bool(gate.get("blocked")) or is_stale(report) or freshness != "新鲜" or not route_available
     action = "持仓优先，不新增风险" if gate_closed else "仅人工复核后观察"
+    if freshness != "新鲜":
+        discipline_reason = f"券商快照为{freshness}；更新账户总览和可卖份额前，新开仓额度为 0。"
+    elif not route_available:
+        discipline_reason = "本地行情快照未生成或不完整；新开仓额度为 0。"
+    elif is_stale(report):
+        discipline_reason = "市场报告已过期；刷新后才可重新评估候选。"
+    else:
+        discipline_reason = str(gate.get("reason") or "账户、持仓、行情三者一致后再做决定。")
     cards = [
         card("账户快照", fmt_money(assets, 2), f"{freshness}；{snap.get('snapshot_time') or '-'}。", freshness_tone),
         card("现金 / 权益", f"{pct_from_ratio(cash_ratio)} / {pct_from_ratio(1 - cash_ratio)}", f"现金 {fmt_money(cash, 0)}；市值 {fmt_money(market_value, 0)}。", "ok"),
         card("累计参考盈亏", fmt_money(snap.get("reference_profit"), 2), f"当日 {fmt_money(snap.get('daily_profit'), 2)}。", "ok" if as_float(snap.get("reference_profit")) >= 0 else "warn"),
-        card("今日纪律", action, str(gate.get("reason") or "账户、持仓、行情三者一致后再做决定。"), "danger" if gate_closed else "warn"),
+        card("今日纪律", action, discipline_reason, "danger" if gate_closed else "warn"),
         card("行情快照", "可复核" if route_available else "待刷新", route_note, "ok" if route_available else "warn"),
     ]
     return f"""
@@ -1873,6 +1992,134 @@ def build_market_observation(report: dict, route: dict) -> str:
     return section("市场与观察", "行情只回答环境问题；候选池不在盘中推送买入", body, "market")
 
 
+def build_evidence_cards(report: dict, broker: dict, route: dict) -> str:
+    """Render the research gate between market observation and any action card."""
+    cards = read_evidence_cards()
+    gate = ((report.get("action_stack") or {}).get("new_entry_gate") or {})
+    freshness, _ = snapshot_age_label(latest_snapshot(broker))
+    route_status = route.get("status") or {}
+    route_available = bool(route.get("available")) or as_float(route_status.get("valid_quote_count")) > 0
+    market_open = not bool(gate.get("blocked")) and not is_stale(report) and freshness == "新鲜" and route_available
+    assessed = [(item, evidence_assessment(item)) for item in cards]
+    complete = sum(1 for _, assessment in assessed if assessment["ready"])
+    data_passed = sum(1 for _, assessment in assessed if assessment["data_passed"])
+    logic_passed = sum(1 for _, assessment in assessed if assessment["logic_passed"])
+    actionable = complete if market_open else 0
+    metrics = [
+        card("候选证据卡", str(len(cards)), "候选不是动作卡；缺卡默认只观察。", "ok" if cards else "warn"),
+        card("数据验证通过", str(data_passed), "价格、均线、流动性、账户权限。", "ok" if data_passed else "warn"),
+        card("逻辑验证通过", str(logic_passed), "供需、共振、位置、催化与反例。", "ok" if logic_passed else "warn"),
+        card(
+            "可人工复核",
+            str(actionable),
+            str(gate.get("reason") or "市场闸门仍需通过。") if market_open else f"账户快照 {freshness} 或行情快照未满足新开仓条件。",
+            "ok" if actionable else "warn",
+        ),
+    ]
+    if not cards:
+        body = (
+            metric_grid(metrics)
+            + '<div class="decision-note"><strong>候选升级规则：</strong>先从 '
+            '<code>examples/research_evidence.example.json</code> 复制到 '
+            '<code>data/research_evidence.local.json</code>，再填写原始来源、供需逻辑、反例、触发和失效条件。'
+            '没有完整证据卡的标的只能停在观察池。</div>'
+        )
+        return section("候选证据与人工复核", "AI 可以整理线索；人必须验证逻辑和仓位", body, "evidence")
+
+    rendered = []
+    for item, assessment in assessed[:12]:
+        code = str(item.get("code") or "-")
+        name = str(item.get("name") or "")
+        if not assessment["ready"]:
+            badge, tone = "仅观察", "warn"
+            headline = "证据卡未完整，不能升级为动作卡。"
+        elif not market_open:
+            badge, tone = "等待市场闸门", "warn"
+            headline = "证据完整，但账户/市场闸门未开。"
+        else:
+            badge, tone = "提交人工复核", "ok"
+            headline = "双重验证已完成；仍需你确认仓位与执行窗口。"
+        source_text = "；".join(
+            f"{source.get('title') or source.get('url') or '未命名来源'} ({source.get('published_at') or source.get('captured_at') or '未记录时间'})"
+            for source in assessment["sources"][:3]
+        ) or "未提供原始来源"
+        lines = [
+            headline,
+            f"供需逻辑：{item.get('supply_demand_thesis') or '-'}",
+            f"市场未定价点：{item.get('market_mispricing') or '-'}",
+            f"反例：{item.get('counter_evidence') or '-'}",
+            f"触发：{item.get('trigger') or '-'}；失效：{item.get('invalidation') or '-'}",
+            f"数据验证：{'通过' if assessment['data_passed'] else '待补 ' + '、'.join(item for item in assessment['missing'] if item.startswith('数据:'))}",
+            f"逻辑验证：{'通过' if assessment['logic_passed'] else '待补 ' + '、'.join(item for item in assessment['missing'] if item.startswith('逻辑:'))}",
+            f"来源：{source_text}",
+        ]
+        rendered.append(
+            prose_card(
+                f"{code} {name}".strip(),
+                lines,
+                f"{item.get('theme') or '未分类'} | {item.get('horizon') or '5-20个交易日'} | {item.get('status') or 'research'}",
+                tone,
+            )
+        )
+    body = (
+        metric_grid(metrics)
+        + '<div class="decision-note"><strong>双重验证：</strong>数据层核对价格、均线、成交、持仓与交易权限；逻辑层核对供需、共振、位置、催化和反例。'
+        '任一缺失，候选只能观察。群消息、热榜和 AI 摘要只能提供线索。</div>'
+        + source_grid(rendered, "wide")
+    )
+    return section("候选证据与人工复核", "产业供需/景气拐点 -> 主线共振 -> 回踩确认", body, "evidence")
+
+
+def build_trade_attribution() -> str:
+    """Make every locally confirmed fill either reviewed or visibly incomplete."""
+    fills = sorted(read_csv(REAL_TRADE_JOURNAL), key=lambda row: str(row.get("trade_time") or ""), reverse=True)
+    attributions = {trade_key(row): row for row in read_csv(TRADE_ATTRIBUTIONS) if trade_key(row) != "|"}
+    reviewed = 0
+    cards = []
+    for fill in fills[:12]:
+        attribution = attributions.get(trade_key(fill))
+        code_name = f"{fill.get('code') or '-'} {fill.get('name') or ''}".strip()
+        if not attribution:
+            cards.append(
+                source_card(
+                    code_name,
+                    f"{fill.get('trade_time') or '-'} | {fill.get('side') or '-'} {fill.get('shares') or '-'} 份",
+                    "未完成归因：先补当时市场闸门、买卖理由、仓位和结果，再评价这笔交易。",
+                    "在 data/trade_attributions.local.csv 新增同一 trade_time 与 code 的一行。",
+                    "warn",
+                )
+            )
+            continue
+        reviewed += 1
+        primary = attribution.get("primary_cause") or "未分类"
+        cards.append(
+            prose_card(
+                code_name,
+                [
+                    f"成交：{fill.get('trade_time') or '-'} | {fill.get('side') or '-'} {fill.get('shares') or '-'} 份 @ {fill.get('price') or '-'}。",
+                    f"市场闸门：{attribution.get('market_state') or '-'}；执行原因：{attribution.get('decision_context') or '-'}。",
+                    f"仓位/执行：{attribution.get('positioning') or '-'}；{attribution.get('execution_quality') or '-'}。",
+                    f"结果：{attribution.get('outcome') or '-'}；主因：{primary}；次因：{attribution.get('secondary_cause') or '-'}。",
+                    f"下一规则：{attribution.get('next_rule') or '-'}",
+                ],
+                f"复盘时间 {attribution.get('reviewed_at') or '-'}",
+                "ok" if primary not in {"未分类", ""} else "warn",
+            )
+        )
+    pending = max(len(fills) - reviewed, 0)
+    metrics = [
+        card("本地确认成交", str(len(fills)), "只读取本机成交台账，不上传。", "ok" if fills else "warn"),
+        card("已完成归因", str(reviewed), "市场、选品、仓位、执行和结果已分开记录。", "ok" if reviewed else "warn"),
+        card("待复盘成交", str(pending), "未归因的成交不能被当作系统有效样本。", "danger" if pending else "ok"),
+    ]
+    note = (
+        '<div class="decision-note"><strong>归因规则：</strong>亏损不只写“判断错了”。必须归到市场状态、选品/供需、买点、仓位、卖点或纪律。'
+        '只有完成归因的成交，才能进入后续胜率、盈亏比和资金扩大统计。</div>'
+    )
+    body = metric_grid(metrics) + note + (source_grid(cards, "wide") if cards else '<div class="empty">尚未记录本地确认成交。</div>')
+    return section("成交归因队列", "每笔成交都要解释：为什么做、环境如何、结果来自哪里", body, "attribution")
+
+
 def build_research_sources(route: dict) -> str:
     route_names = " -> ".join(route.get("route") or []) or "腾讯实时行情 -> 通达信 K 线 -> 腾讯前复权 K 线 -> AKShare"
     cards = [
@@ -1892,9 +2139,12 @@ def build_html() -> str:
     title = "Niki 投资决策工作台"
     html_body = f"""
     {build_decision_home(report, broker, route)}
+    {build_risk_budget(report, broker, route)}
     {build_holding_focus(broker)}
     {build_holdings_table(broker)}
     {build_market_observation(report, route)}
+    {build_evidence_cards(report, broker, route)}
+    {build_trade_attribution()}
     {build_research_sources(route)}
     {build_daily_maintenance_records()}
     <footer>本页只读取本地账户快照与公开行情快照，用于纪律提醒和复盘；不连接券商、不自动下单、不承诺收益。</footer>
@@ -1910,8 +2160,11 @@ def build_html() -> str:
 <body>
   <nav>
     <strong>Niki 决策工作台</strong>
+    <a href="#risk-budget">风险预算</a>
     <a href="#holdings">持仓</a>
     <a href="#market">市场</a>
+    <a href="#evidence">证据卡</a>
+    <a href="#attribution">归因</a>
     <a href="#research">数据与研究</a>
     <a href="#maintenance">维护</a>
   </nav>
@@ -2049,6 +2302,8 @@ def refresh_status() -> dict:
         "report_mtime": file_time(REPORT),
         "broker_snapshot_time": snap.get("snapshot_time") or "-",
         "latest_real_trade_time": (latest_real_trade().get("trade_time") or "-"),
+        "evidence_cards_mtime": file_time(EVIDENCE_CARDS),
+        "trade_attributions_mtime": file_time(TRADE_ATTRIBUTIONS),
         "a_stock_route_mtime": file_time(A_STOCK_ROUTE),
     }
 

@@ -11,6 +11,15 @@
   "daily_loss_hard_stop": -2000,
   "tactical_callable_cash": 0,
   "cash_policy_note": "Example only. Copy this file to portfolio.local.json and enter private account values there.",
+  "risk_budget": {
+    "enabled": true,
+    "single_trial_risk_pct": 0.005,
+    "max_trial_capital_pct": 0.05,
+    "max_cumulative_trial_capital_pct": 0.15,
+    "daily_loss_stop": 2000,
+    "monthly_drawdown_stop_pct": 0.03,
+    "profit_target_note": "Profit targets never open a trade. The radar only budgets a maximum loss, trial capital, and stop line."
+  },
   "positions": [
     {
       "code": "510300",
