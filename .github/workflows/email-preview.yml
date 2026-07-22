@@ -1,7 +1,20 @@
-name: Investment Workbench Market Scan Email
+name: Investment Workbench Radar Email
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Radar email type
+        required: true
+        default: postclose
+        type: choice
+        options:
+          - intraday
+          - postclose
+  schedule:
+    # GitHub cron uses UTC. Beijing time: 10:45 intraday and 15:25 post-close.
+    - cron: '45 2 * * 1-5'
+    - cron: '25 7 * * 1-5'
 
 permissions:
   contents: read
@@ -20,8 +33,15 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-a-stock.txt
 
-      - name: Scan market and send manual email
-        run: python tools/send_workbench_email_preview.py
+      - name: Scan market and send radar email
+        run: |
+          if [ "${{ github.event.schedule }}" = "45 2 * * 1-5" ]; then
+            python tools/send_workbench_email_preview.py --intraday
+          elif [ "${{ inputs.mode }}" = "intraday" ]; then
+            python tools/send_workbench_email_preview.py --intraday
+          else
+            python tools/send_workbench_email_preview.py
+          fi
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
