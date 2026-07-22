@@ -15,6 +15,7 @@ import html
 import importlib.util
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -2308,6 +2309,16 @@ def refresh_status() -> dict:
     }
 
 
+def a_stock_python() -> str:
+    configured = os.environ.get("A_STOCK_PYTHON")
+    if configured and Path(configured).is_file():
+        return configured
+    local_python = ROOT / ".venv-a-stock" / "Scripts" / "python.exe"
+    if local_python.is_file():
+        return str(local_python)
+    return sys.executable
+
+
 def start_refresh() -> dict:
     global REFRESH_PROCESS, REFRESH_STARTED_AT
     with REFRESH_LOCK:
@@ -2317,7 +2328,7 @@ def start_refresh() -> dict:
             "import os, subprocess, sys; "
             "os.environ['PYTHONIOENCODING']='utf-8'; "
             "steps=["
-            "('a-share quote and K-line snapshot',[sys.executable,'tools/a_stock_radar_snapshot.py'],120)"
+            f"('a-share quote and K-line snapshot',[{a_stock_python()!r},'tools/a_stock_radar_snapshot.py'],120)"
             "]; "
             "\nfor name, cmd, timeout in steps:\n"
             "    print(f'=== {name} start ===', flush=True)\n"

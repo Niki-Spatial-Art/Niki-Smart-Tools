@@ -16,7 +16,8 @@ Niki Smart Tools is a local-first A-share/ETF research and decision-discipline w
 - New entries require: complete broad-market scan, fresh valid local broker snapshot, and fresh local A-share route snapshot.
 - Existing holdings can still be reviewed while the new-entry gate is blocked.
 - The market route is Tencent quote -> TDX/mootdx daily bars -> Tencent qfq daily bars -> AKShare fallback.
-- `requirements-a-stock.txt` pins the optional full route (`mootdx`, `akshare`, `pandas`, `stockstats`). `A_STOCK_PYTHON` may point the local launcher to a prebuilt isolated environment.
+- `requirements-a-stock.txt` pins the optional full route (`mootdx`, `akshare`, `pandas`, `stockstats`). The local `.venv-a-stock` has `mootdx==0.11.7` installed; radar and workbench launchers prefer it unless `A_STOCK_PYTHON` explicitly overrides it.
+- The dashboard refresh action independently selects the same `A_STOCK_PYTHON` / `.venv-a-stock` route, so an older dashboard process cannot silently fall back to a Python environment without `mootdx`.
 - `data/broker_account_snapshots.json` is historical and may be malformed; use `data/broker_account_snapshots.local.json` for current manual snapshots.
 - `data/trade_journal.local.csv` is an optional ignored local ledger of user-confirmed fills. The dashboard reconciles its latest entry against the latest broker snapshot; it is never sent to GitHub or cloud email.
 - The local dashboard is named "Niki 投资决策工作台". Its default order is account snapshot -> holding risk -> market observation -> post-close research.

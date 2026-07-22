@@ -19,6 +19,7 @@ data/trade_journal.csv
 dist/
 build/
 .pytest_cache/
+.venv-a-stock/
 .coverage
 htmlcov/
 video_frames/
